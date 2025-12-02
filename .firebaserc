@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "booking-system-firebase-764d2",
+    "booking-system": "booking-system-firebase-764d2"
+  },
+  "targets": {},
+  "etags": {}
+}

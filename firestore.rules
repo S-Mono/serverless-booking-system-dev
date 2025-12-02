@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 👑 管理者判定 (UIDリスト)
+    function isAdmin() {
+      return request.auth.uid in [
+        "gkYAz9GhsEPiS4y8vd7YdBeoh6D2", // 智史
+        "s4repJZZk9cUOGtFEEigvtqbBGv1", // 宏幸
+        // 必要に応じてご自身のUIDを追加
+      ];
+    }
+
+    // 👤 本人判定
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 🔑 ログイン済み判定
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // 📅 予約データ (reservations)
+    match /reservations/{reservationId} {
+      allow read, write: if isAdmin();
+      allow read: if isAuthenticated();
+      allow create: if isOwner(request.resource.data.customer_id);
+      allow update, delete: if isOwner(resource.data.customer_id);
+    }
+
+    // 📩 メッセージデータ (messages)
+    match /messages/{messageId} {
+      allow read, write: if isAdmin();
+      allow read: if isOwner(resource.data.customer_id);
+      allow create: if isOwner(request.resource.data.customer_id);
+      allow update: if isOwner(resource.data.customer_id);
+    }
+
+    // 👥 顧客データ (customers)
+    match /customers/{userId} {
+      allow read, write: if isAdmin();
+      allow read, write: if isOwner(userId);
+    }
+
+    // 📋 マスタデータ
+    match /menus/{menuId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /staffs/{staffId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /shop_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 🔔 通知トークン (admin_tokens)
+    match /admin_tokens/{tokenId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
