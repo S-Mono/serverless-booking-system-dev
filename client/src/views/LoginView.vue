@@ -25,7 +25,7 @@ const loading = ref(false)
 const message = ref('')
 // social 認証専用の状態 (google | line) を保持します。
 const socialAuth = ref<string | null>(null)
-const liffLoading = ref(true)
+const miniAppLoading = ref(true)
 const isLineApp = ref(false)
 
 const PSEUDO_DOMAIN = '@local.booking-system'
@@ -70,40 +70,43 @@ onMounted(async () => {
     }
   }
 
-  // 3. LIFF初期化 (ローカル環境ではスキップして警告を消す)
-  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-    console.log('Localhost detected: Skipping LIFF init')
-    liffLoading.value = false
-  } else {
-    // 本番環境のみ実行
-    try {
-      const liffId = import.meta.env.VITE_LIFF_ID
-      if (liffId) {
-        await liff.init({ liffId })
-        if (liff.isInClient()) {
-          isLineApp.value = true
+  // 3. LINEミニアプリ初期化
+  try {
+    const miniAppId = import.meta.env.VITE_MINI_APP_ID
+    if (miniAppId) {
+      console.log('Initializing LINE Mini App:', miniAppId)
+      await liff.init({ liffId: miniAppId })
+
+      if (liff.isInClient()) {
+        isLineApp.value = true
+        console.log('Running in LINE app')
+
+        // ミニアプリは自動ログイン状態のため、すぐに認証処理
+        if (liff.isLoggedIn()) {
+          console.log('Already logged in, attempting auto-login...')
+          // 自動ログイン処理を実行
+          await autoLoginWithLine()
         }
       }
-    } catch (error) {
-      console.error('LIFF init failed', error)
-    } finally {
-      liffLoading.value = false
+    } else {
+      console.warn('VITE_MINI_APP_ID is not defined')
     }
+  } catch (error) {
+    console.error('LINE Mini App init failed', error)
+  } finally {
+    miniAppLoading.value = false
   }
 })
 
-// 🟢 LINEログイン (LIFF)
-const loginWithLine = async () => {
-  // 状態をセットしてオーバーレイを出す
-  socialAuth.value = 'line'
-  message.value = 'LINEアカウントを確認中...'
-  if (!liff.isLoggedIn()) {
-    // LIFF のログインは別ウィンドウへ遷移するため、ここで loading を true のままにしておく
-    liff.login()
-    return
-  }
-  loading.value = true
+/**
+ * LINEミニアプリ自動ログイン
+ * ミニアプリ起動時に既にログイン状態の場合、自動的にFirebase認証
+ */
+const autoLoginWithLine = async () => {
   try {
+    socialAuth.value = 'line'
+    message.value = 'LINEアカウントで認証中...'
+
     await setPersistence(auth, browserLocalPersistence)
     const profile = await liff.getProfile()
     const lineUserId = profile.userId
@@ -115,25 +118,45 @@ const loginWithLine = async () => {
     try {
       const cred = await signInWithEmailAndPassword(auth, firebaseEmail, firebasePassword)
       user = cred.user
+      console.log('LINE user signed in:', user.uid)
     } catch (error: any) {
       if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        console.log('Creating new LINE user...')
         const cred = await createUserWithEmailAndPassword(auth, firebaseEmail, firebasePassword)
         user = cred.user
       } else {
         throw error
       }
     }
+
     await createCustomerData(user, 'line', lineName)
+
     // 成功時はオーバーレイをクリアしてから遷移
     socialAuth.value = null
-    loading.value = false
     router.push('/')
   } catch (error: any) {
-    console.error(error)
-    message.value = `LINEログイン失敗: ${error.message}`
-    loading.value = false
+    console.error('Auto login failed:', error)
+    message.value = `LINE自動ログイン失敗: ${error.message}`
     socialAuth.value = null
   }
+}
+
+/**
+ * 🟢 LINEログイン（手動ボタン押下時）
+ * ミニアプリでは通常不要だが、フォールバック用に残す
+ */
+const loginWithLine = async () => {
+  socialAuth.value = 'line'
+  message.value = 'LINEアカウントを確認中...'
+
+  if (!liff.isLoggedIn()) {
+    console.log('Not logged in, redirecting to LINE login...')
+    liff.login()
+    return
+  }
+
+  // 既にログイン済みの場合は自動ログイン処理と同じ
+  await autoLoginWithLine()
 }
 
 // 🔵 Googleログイン
@@ -201,7 +224,7 @@ const handleAuth = async () => {
   <div class="auth-container">
     <h2>{{ isLoginMode ? 'ログイン' : '新規会員登録' }}</h2>
 
-    <div v-if="liffLoading" class="loading-text">LINE連携を確認中...</div>
+    <div v-if="miniAppLoading" class="loading-text">LINE連携を確認中...</div>
 
     <div class="social-login">
       <button v-if="isLineApp" class="line-login-btn" @click="loginWithLine" :disabled="loading">

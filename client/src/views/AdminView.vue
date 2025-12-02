@@ -10,6 +10,10 @@ import { getToken, onMessage } from 'firebase/messaging'
 const router = useRouter()
 const dialog = useDialogStore()
 
+// LocalStorage キー
+const NOTIFICATION_STATUS_KEY = 'admin_notification_enabled'
+const NOTIFICATION_TOKEN_KEY = 'admin_notification_token'
+
 const isNotifyEnabled = ref(false) // 現在通知ONかどうか
 
 interface Staff { id: string; name: string }
@@ -275,18 +279,50 @@ const checkNotificationStatus = async () => {
     // まずブラウザの許可状態を確認
     if (Notification.permission !== 'granted') {
       isNotifyEnabled.value = false
+      localStorage.removeItem(NOTIFICATION_STATUS_KEY)
+      localStorage.removeItem(NOTIFICATION_TOKEN_KEY)
       return
     }
 
-    // トークンを取得して、DBにあるかチェック
+    // トークンを取得
     const token = await getToken(messaging, { vapidKey: VAPID_KEY })
     if (token) {
+      // localStorageに保存されたトークンと比較
+      const savedToken = localStorage.getItem(NOTIFICATION_TOKEN_KEY)
+      const savedStatus = localStorage.getItem(NOTIFICATION_STATUS_KEY)
+
+      // トークンが変わった場合は、古いトークンを削除して新しいトークンで再登録
+      if (savedToken && savedToken !== token) {
+        console.log('Token changed, cleaning up old token:', savedToken)
+        try {
+          await deleteDoc(doc(db, 'admin_tokens', savedToken))
+        } catch (e) {
+          console.warn('Failed to delete old token', e)
+        }
+      }
+
+      // DBにトークンが存在するかチェック
       const docSnap = await getDoc(doc(db, 'admin_tokens', token))
-      isNotifyEnabled.value = docSnap.exists()
+      const isEnabled = docSnap.exists()
+
+      // 状態を更新
+      isNotifyEnabled.value = isEnabled
+      if (isEnabled) {
+        localStorage.setItem(NOTIFICATION_STATUS_KEY, 'true')
+        localStorage.setItem(NOTIFICATION_TOKEN_KEY, token)
+      } else {
+        // DBにない場合は、localStorageもクリア
+        localStorage.removeItem(NOTIFICATION_STATUS_KEY)
+        localStorage.removeItem(NOTIFICATION_TOKEN_KEY)
+      }
+
+      console.log('Notification status checked:', { isEnabled, token: token.substring(0, 20) + '...' })
     }
   } catch (e) {
     console.error('通知ステータス確認エラー', e)
     isNotifyEnabled.value = false
+    localStorage.removeItem(NOTIFICATION_STATUS_KEY)
+    localStorage.removeItem(NOTIFICATION_TOKEN_KEY)
   }
 }
 
@@ -308,16 +344,27 @@ const requestNotificationPermission = async () => {
     console.log('requestNotificationPermission - Notification.permission:', permission)
     if (permission === 'granted') {
       const token = await getToken(messaging, { vapidKey: VAPID_KEY })
-      //console.log('requestNotificationPermission - getToken returned:', token)
       if (token) {
-        await setDoc(doc(db, 'admin_tokens', token), {
-          token: token,
-          uid: auth.currentUser?.uid || 'unknown_admin',
-          device_agent: navigator.userAgent,
-          created_at: Timestamp.now()
-        })
-        isNotifyEnabled.value = true // 👈 状態更新
-        console.log('requestNotificationPermission - saved token to admin_tokens')
+        // 既にDBに存在するかチェック（重複登録防止）
+        const docSnap = await getDoc(doc(db, 'admin_tokens', token))
+        if (!docSnap.exists()) {
+          // 新規登録
+          await setDoc(doc(db, 'admin_tokens', token), {
+            token: token,
+            uid: auth.currentUser?.uid || 'unknown_admin',
+            device_agent: navigator.userAgent,
+            created_at: Timestamp.now()
+          })
+          console.log('requestNotificationPermission - saved new token to admin_tokens')
+        } else {
+          console.log('requestNotificationPermission - token already exists in DB')
+        }
+
+        // 状態を更新してlocalStorageに保存
+        isNotifyEnabled.value = true
+        localStorage.setItem(NOTIFICATION_STATUS_KEY, 'true')
+        localStorage.setItem(NOTIFICATION_TOKEN_KEY, token)
+
         dialog.alert('この端末での通知を【ON】にしました！')
         // ユーザーが通知を有効にした直後は「ユーザー操作」とみなされるため
         // このタイミングで一度音を再生しておくと、今後の非同期通知再生で
@@ -375,7 +422,13 @@ const turnOffNotification = async () => {
     if (token) {
       // DBから削除
       await deleteDoc(doc(db, 'admin_tokens', token))
-      isNotifyEnabled.value = false // 👈 状態更新
+
+      // 状態を更新してlocalStorageからも削除
+      isNotifyEnabled.value = false
+      localStorage.removeItem(NOTIFICATION_STATUS_KEY)
+      localStorage.removeItem(NOTIFICATION_TOKEN_KEY)
+
+      console.log('Notification turned off and localStorage cleared')
       dialog.alert('この端末での通知を【OFF】にしました。')
     }
   } catch (e) {
@@ -646,10 +699,12 @@ const loadMoreDays = (days = 30) => {
   initData(false)
 }
 
-onMounted(() => {
+onMounted(async () => {
   initData()
   // try to preload the chime buffer for lower-latency playback
   preloadChime()
+  // 通知状態を確認・復元
+  await checkNotificationStatus()
 
   // Register a single foreground onMessage handler for FCM so admin sees alerts
   // even when they're viewing a different date. Keep unregister function in module scope.

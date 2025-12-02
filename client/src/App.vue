@@ -5,11 +5,11 @@ import { auth, db } from './lib/firebase'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { useUserStore } from './stores/user'
-import { useLiffStore } from './stores/liff'
+import { useLineAuthStore } from './stores/lineAuth'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 
 const userStore = useUserStore()
-const liffStore = useLiffStore()
+const lineAuthStore = useLineAuthStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -44,7 +44,7 @@ const subscribeUnread = (userId: string) => {
 }
 
 onMounted(async () => {
-  await liffStore.init()
+  await lineAuthStore.init()
   let unsubscribeMessages: (() => void) | null = null
 
   onAuthStateChanged(auth, async (user) => {

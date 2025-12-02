@@ -196,6 +196,8 @@ const formatDate = (ts: Timestamp) => {
   max-width: 1024px;
   margin: 0 auto;
   padding: 2rem 1rem;
+  min-height: 100vh;
+  overflow-y: auto;
 }
 
 .page-header {
