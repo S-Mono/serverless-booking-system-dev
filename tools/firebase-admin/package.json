@@ -1,0 +1,12 @@
+{
+  "name": "firebase-admin-tools",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^11.0.0",
+    "yargs": "^17.7.2"
+  },
+  "scripts": {
+    "set-admin": "node set-admin.js"
+  }
+}
