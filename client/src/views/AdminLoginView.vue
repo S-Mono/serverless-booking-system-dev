@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { auth } from '../lib/firebase'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, getIdTokenResult, signOut } from 'firebase/auth'
 
 const email = ref('')
 const password = ref('')
@@ -17,11 +17,12 @@ const handleLogin = async () => {
   try {
     await signInWithEmailAndPassword(auth, email.value, password.value)
     // ログイン成功後、IDトークンのカスタムクレームに admin があるか確認して遷移
-    const { getIdTokenResult } = await import('firebase/auth')
     const idTokenResult = await getIdTokenResult(auth.currentUser!)
     if (idTokenResult.claims && idTokenResult.claims.admin) {
       router.push('/admin')
     } else {
+      // 管理者権限がない場合はログアウト
+      await signOut(auth)
       errorMsg.value = 'このアカウントには管理者権限がありません'
     }
   } catch (e: any) {

@@ -15,14 +15,30 @@ const admin = require('firebase-admin')
 const argv = require('yargs/yargs')(process.argv.slice(2)).argv
 
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  console.error('ERROR: GOOGLE_APPLICATION_CREDENTIALS not set. Set it to your service account JSON path and run this script in a secure environment.')
+  console.error('\n❌ ERROR: GOOGLE_APPLICATION_CREDENTIALS not set.')
+  console.error('\nPlease follow these steps:')
+  console.error('1. Download your service account key from Firebase Console:')
+  console.error('   https://console.firebase.google.com/project/booking-system-dev-81786/settings/serviceaccounts/adminsdk')
+  console.error('2. Save the JSON file to a secure location (DO NOT commit to git)')
+  console.error('3. Set the environment variable:')
+  console.error('   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/serviceAccountKey.json"')
+  console.error('4. Run this script again\n')
   process.exit(2)
 }
 
 try {
-  admin.initializeApp({})
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault()
+  })
+  console.log('✅ Firebase Admin initialized successfully')
 } catch (e) {
-  // Already initialized maybe
+  console.error('\n❌ ERROR: Failed to initialize Firebase Admin SDK')
+  console.error('Error:', e.message)
+  console.error('\nPlease check that:')
+  console.error('1. GOOGLE_APPLICATION_CREDENTIALS points to a valid service account JSON file')
+  console.error('2. The file exists and is readable')
+  console.error('3. The service account has proper permissions\n')
+  process.exit(2)
 }
 
 async function main() {

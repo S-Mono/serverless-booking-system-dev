@@ -7,6 +7,7 @@ import AdminSettingsView from '../views/AdminSettingsView.vue'
 import AdminMenuSettingsView from '../views/AdminMenuSettingsView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import { auth } from '../lib/firebase'
+import { getIdTokenResult } from 'firebase/auth'
 
 // 管理キーはクライアント側に置かない（Firebase 管理者クレームで管理）
 
@@ -92,7 +93,6 @@ router.beforeEach(async (to, from, next) => {
 
     // トークンのカスタムクレームに admin フラグがあるかを確認
     try {
-      const { getIdTokenResult } = await import('firebase/auth')
       const idTokenResult = await getIdTokenResult(user)
       if (!idTokenResult.claims || !idTokenResult.claims.admin) {
         // 管理者権限がないならアクセス拒否

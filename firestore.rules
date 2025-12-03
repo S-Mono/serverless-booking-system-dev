@@ -2,13 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 👑 管理者判定 (UIDリスト)
+    // 👑 管理者判定 (カスタムクレームをチェック)
     function isAdmin() {
-      return request.auth.uid in [
-        "gkYAz9GhsEPiS4y8vd7YdBeoh6D2", // 智史
-        "s4repJZZk9cUOGtFEEigvtqbBGv1", // 宏幸
-        // 必要に応じてご自身のUIDを追加
-      ];
+      return request.auth != null && request.auth.token.admin == true;
     }
 
     // 👤 本人判定

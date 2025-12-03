@@ -4,12 +4,13 @@ importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-comp
 
 // Configは本体と同じものを使用
 const firebaseConfig = {
-  apiKey: "AIzaSyCJWmgozIBHbzEmtJq1EH6aAa1g5gQtGf4",
-  authDomain: "booking-system-firebase-764d2.firebaseapp.com",
-  projectId: "booking-system-firebase-764d2",
-  storageBucket: "booking-system-firebase-764d2.firebasestorage.app",
-  messagingSenderId: "829906230754",
-  appId: "1:829906230754:web:6b51fa2c7f184e8788edbb"
+  apiKey: "AIzaSyAIqfpB6xIv9-NuS85-Kd1-Rnt1WNDQ0gc",
+  authDomain: "booking-system-dev-81786.firebaseapp.com",
+  databaseURL: "https://booking-system-dev-81786-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "booking-system-dev-81786",
+  storageBucket: "booking-system-dev-81786.firebasestorage.app",
+  messagingSenderId: "593961087476",
+  appId: "1:593961087476:web:bce41618269870d75509a1"
 };
 
 firebase.initializeApp(firebaseConfig);
