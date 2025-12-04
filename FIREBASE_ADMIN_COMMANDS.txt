@@ -1,0 +1,137 @@
+====================================================================
+Firebase 管理者権限付与コマンド集
+====================================================================
+
+プロジェクト情報:
+- 本番環境: booking-system-firebase-764d2
+- 開発環境: booking-system-dev-81786
+
+====================================================================
+1. 環境変数の設定（必須）
+====================================================================
+
+# 開発環境用
+export GOOGLE_APPLICATION_CREDENTIALS="/home/s_monou/booking-app/serverless-booking-system-d/booking-system-dev-81786-firebase-adminsdk-fbsvc-8126f47cb0.json"
+
+# 本番環境用
+export GOOGLE_APPLICATION_CREDENTIALS="/home/s_monou/booking-app/serverless-booking-system/booking-system-firebase-764d2-firebase-adminsdk-fbsvc-5f79f3985e.json"
+
+====================================================================
+2. 管理者権限の付与
+====================================================================
+
+# 開発環境での管理者権限付与（メールアドレス指定）
+cd /home/s_monou/booking-app/serverless-booking-system-d/tools/firebase-admin
+export GOOGLE_APPLICATION_CREDENTIALS="/home/s_monou/booking-app/serverless-booking-system-d/booking-system-dev-81786-firebase-adminsdk-fbsvc-8126f47cb0.json"
+node set-admin.js --email s_monou@ridgeworks.co.jp --admin true
+
+# 本番環境での管理者権限付与（メールアドレス指定）
+cd /home/s_monou/booking-app/serverless-booking-system/tools/firebase-admin
+export GOOGLE_APPLICATION_CREDENTIALS="/home/s_monou/booking-app/serverless-booking-system/booking-system-firebase-764d2-firebase-adminsdk-fbsvc-5f79f3985e.json"
+node set-admin.js --email s_monou@ridgeworks.co.jp --admin true
+
+# UID指定で管理者権限付与
+node set-admin.js --uid <USER_UID> --admin true
+
+====================================================================
+3. 管理者権限の削除
+====================================================================
+
+# メールアドレス指定で権限削除
+node set-admin.js --email user@example.com --admin false
+
+# UID指定で権限削除
+node set-admin.js --uid <USER_UID> --admin false
+
+====================================================================
+4. 依存関係のインストール（初回のみ）
+====================================================================
+
+cd /home/s_moonu/booking-app/serverless-booking-system-d/tools/firebase-admin
+npm install
+
+====================================================================
+5. Firebase プロジェクトの切り替え
+====================================================================
+
+# 開発環境に切り替え
+cd /home/s_monou/booking-app/serverless-booking-system-d
+firebase use booking-system-dev-81786
+
+# 本番環境に切り替え
+cd /home/s_monou/booking-app/serverless-booking-system
+firebase use booking-system-firebase-764d2
+
+# プロジェクト一覧確認
+firebase projects:list
+
+====================================================================
+6. Firestore セキュリティルールのデプロイ
+====================================================================
+
+# 開発環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system-d
+firebase deploy --only firestore:rules
+
+# 本番環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system
+firebase deploy --only firestore:rules
+
+====================================================================
+7. Cloud Functions のデプロイ
+====================================================================
+
+# 開発環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system-d
+firebase deploy --only functions
+
+# 本番環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system
+firebase deploy --only functions
+
+# 特定の関数のみデプロイ
+firebase deploy --only functions:onReservationCreated
+
+====================================================================
+8. Firestore インデックスのデプロイ
+====================================================================
+
+# 開発環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system-d
+firebase deploy --only firestore:indexes
+
+# 本番環境へデプロイ
+cd /home/s_monou/booking-app/serverless-booking-system
+firebase deploy --only firestore:indexes
+
+====================================================================
+9. 全てをまとめてデプロイ
+====================================================================
+
+# 開発環境（ルール、インデックス、Functions）
+cd /home/s_monou/booking-app/serverless-booking-system-d
+firebase deploy --only firestore,functions
+
+# 本番環境（ルール、インデックス、Functions）
+cd /home/s_monou/booking-app/serverless-booking-system
+firebase deploy --only firestore,functions
+
+====================================================================
+10. ユーザー情報の確認
+====================================================================
+
+# Firebase Authentication でユーザーのUIDを確認
+firebase auth:export users.json --project booking-system-dev-81786
+cat users.json | jq '.users[] | {uid: .uid, email: .email, customClaims: .customClaims}'
+
+====================================================================
+注意事項
+====================================================================
+
+1. サービスアカウントキーは秘匿情報です。Gitにコミットしないこと
+2. 管理者権限の付与は慎重に行うこと
+3. 本番環境での操作は特に注意すること
+4. 環境変数 GOOGLE_APPLICATION_CREDENTIALS は必ず正しいパスを指定すること
+5. Firestore ルールで管理者判定はカスタムクレーム `admin: true` を使用
+
+====================================================================
