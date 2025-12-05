@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
+import * as XLSX from 'xlsx'
 
 interface Reservation {
     id: string
@@ -227,6 +228,116 @@ const togglePastData = async () => {
         await loadPastData()
     }
 }
+
+// Excelエクスポート機能
+const exportToExcel = () => {
+    // ワークブックを作成
+    const wb = XLSX.utils.book_new()
+
+    // 現在の期間のシート
+    const currentSheetData: any[][] = [
+        ['売上分析レポート'],
+        ['期間:', `${currentStartDate.value} 〜 ${currentEndDate.value}`],
+        [],
+        ['サマリー'],
+        ['総売上', `¥${currentTotal.value.toLocaleString()}`],
+        ['予約件数', `${currentCount.value}件`],
+        ['平均単価', `¥${currentCount.value > 0 ? Math.round(currentTotal.value / currentCount.value).toLocaleString() : 0}`],
+        [],
+        ['日別売上詳細'],
+        ['日付', '曜日', '売上', '予約件数']
+    ]
+
+    currentSalesData.value.forEach(day => {
+        const date = new Date(day.date + 'T00:00:00')
+        const weekday = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()]
+        currentSheetData.push([
+            day.date,
+            weekday,
+            day.sales,
+            day.count
+        ])
+    })
+
+    // 合計行を追加
+    currentSheetData.push([
+        '合計',
+        '',
+        currentTotal.value,
+        currentCount.value
+    ])
+
+    const wsCurrents = XLSX.utils.aoa_to_sheet(currentSheetData)
+
+    // 列幅を設定
+    wsCurrents['!cols'] = [
+        { wch: 15 }, // 日付
+        { wch: 8 },  // 曜日
+        { wch: 15 }, // 売上
+        { wch: 10 }  // 予約件数
+    ]
+
+    XLSX.utils.book_append_sheet(wb, wsCurrents, '現在の期間')
+
+    // 過去の期間のシート（表示中の場合）
+    if (showPastData.value && pastSalesData.value.length > 0) {
+        const pastSheetData: any[][] = [
+            ['売上分析レポート（過去）'],
+            ['期間:', `${pastStartDate.value} 〜 ${pastEndDate.value}`],
+            [],
+            ['サマリー'],
+            ['総売上', `¥${pastTotal.value.toLocaleString()}`],
+            ['予約件数', `${pastCount.value}件`],
+            ['平均単価', `¥${pastCount.value > 0 ? Math.round(pastTotal.value / pastCount.value).toLocaleString() : 0}`],
+            [],
+            ['比較'],
+            ['売上増減', `${currentTotal.value > pastTotal.value ? '+' : ''}¥${(currentTotal.value - pastTotal.value).toLocaleString()}`],
+            ['売上増減率', `${currentTotal.value > pastTotal.value ? '+' : ''}${((currentTotal.value - pastTotal.value) / (pastTotal.value || 1) * 100).toFixed(1)}%`],
+            ['予約件数増減', `${currentCount.value > pastCount.value ? '+' : ''}${currentCount.value - pastCount.value}件`],
+            [],
+            ['日別売上詳細'],
+            ['日付', '曜日', '売上', '予約件数']
+        ]
+
+        pastSalesData.value.forEach(day => {
+            const date = new Date(day.date + 'T00:00:00')
+            const weekday = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()]
+            pastSheetData.push([
+                day.date,
+                weekday,
+                day.sales,
+                day.count
+            ])
+        })
+
+        // 合計行を追加
+        pastSheetData.push([
+            '合計',
+            '',
+            pastTotal.value,
+            pastCount.value
+        ])
+
+        const wsPast = XLSX.utils.aoa_to_sheet(pastSheetData)
+
+        // 列幅を設定
+        wsPast['!cols'] = [
+            { wch: 15 }, // 日付
+            { wch: 8 },  // 曜日
+            { wch: 15 }, // 売上
+            { wch: 10 }  // 予約件数
+        ]
+
+        XLSX.utils.book_append_sheet(wb, wsPast, '過去の期間')
+    }
+
+    // ファイル名を生成（現在の日時を含む）
+    const now = new Date()
+    const filename = `売上分析_${currentStartDate.value}_${currentEndDate.value}_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`
+
+    // ファイルをダウンロード
+    XLSX.writeFile(wb, filename)
+}
 </script>
 
 <template>
@@ -248,6 +359,9 @@ const togglePastData = async () => {
                         <button @click="handleSearch" class="search-btn">検索</button>
                         <button @click="togglePastData" class="toggle-past-btn">
                             {{ showPastData ? '📂 過去を非表示' : '📈 過去と比較' }}
+                        </button>
+                        <button @click="exportToExcel" class="export-btn" :disabled="currentSalesData.length === 0">
+                            📥 Excelダウンロード
                         </button>
                     </div>
                 </div>
@@ -547,6 +661,27 @@ const togglePastData = async () => {
 
 .toggle-past-btn:hover {
     background: #5a6268;
+}
+
+.export-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+}
+
+.export-btn:hover:not(:disabled) {
+    background: #218838;
+}
+
+.export-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .loading {
