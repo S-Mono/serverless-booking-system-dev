@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 import { messaging, VAPID_KEY } from '../lib/firebase' // 👈 VAPID_KEY
 import { getToken, onMessage } from 'firebase/messaging'
+import * as XLSX from 'xlsx-js-style'
 
 const router = useRouter()
 const dialog = useDialogStore()
@@ -748,6 +749,231 @@ onUnmounted(() => {
   try { if (unsubscribeList) unsubscribeList() } catch (_) { }
   try { if (unregisterFcmOnMessage) unregisterFcmOnMessage() } catch (_) { }
 })
+
+// Excel出力関数
+const exportReservationsToExcel = async () => {
+  try {
+    // 左パネルと同じ表示期間の予約を取得（selectedDateから30日分）
+    const startDate = new Date(selectedDate.value)
+    startDate.setHours(0, 0, 0, 0)
+
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + listWindowDays.value)
+    endDate.setHours(23, 59, 59, 999)
+
+    const reservationsRef = collection(db, 'reservations')
+    const q = query(
+      reservationsRef,
+      where('start_at', '>=', Timestamp.fromDate(startDate)),
+      where('start_at', '<=', Timestamp.fromDate(endDate)),
+      orderBy('start_at', 'asc')
+    )
+    const snapshot = await getDocs(q)
+
+    if (snapshot.empty) {
+      dialog.alert('出力する予約がありません', '予約データなし')
+      return
+    }
+
+    const reservations: Reservation[] = []
+    snapshot.forEach((doc) => {
+      reservations.push({ id: doc.id, ...doc.data() } as Reservation)
+    })
+
+    // 日付ごとにグループ化
+    const groupedByDate = new Map<string, Reservation[]>()
+    reservations.forEach((res) => {
+      const date = res.start_at.toDate()
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      if (!groupedByDate.has(dateKey)) {
+        groupedByDate.set(dateKey, [])
+      }
+      groupedByDate.get(dateKey)!.push(res)
+    })
+
+    // 営業時間の取得
+    const startHour = parseInt(shopConfig.value.business_hours.start.split(':')[0] as string)
+    const endHour = parseInt(shopConfig.value.business_hours.end.split(':')[0] as string)
+
+    // 15分単位の時間枠を生成 (例: 09:00, 09:15, 09:30...)
+    const timeSlots: string[] = []
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += 15) {
+        timeSlots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+      }
+    }
+    timeSlots.push(`${String(endHour).padStart(2, '0')}:00`)
+
+    // Excelデータ作成（横軸=時間、縦軸=項目）
+    const worksheetData: any[] = []
+    const cellStyles: { row: number; col: number; style: any }[] = []
+    let currentRow = 0
+
+    // 日付ごとに処理
+    const sortedDates = Array.from(groupedByDate.keys()).sort()
+    sortedDates.forEach((dateKey, dateIndex) => {
+      const dateReservations = groupedByDate.get(dateKey)!
+      const dateObj = new Date(dateKey)
+      const days = ['日', '月', '火', '水', '木', '金', '土']
+      const dateHeader = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日(${days[dateObj.getDay()]})`
+
+      // 日付ヘッダー行を追加
+      if (dateIndex > 0) {
+        worksheetData.push([]) // 前の日付との間に空行
+        currentRow++
+      }
+      worksheetData.push([dateHeader])
+      currentRow++
+
+      // ヘッダー行：項目名 + 各時間枠
+      const headerRow = ['時間', ...timeSlots]
+      worksheetData.push(headerRow)
+      const headerRowIndex = currentRow
+      currentRow++
+
+      // 各時間枠の予約データを収集（開始時間のみ記録）
+      const timeSlotData = new Map<string, {
+        reservation: Reservation | null;
+        isStart: boolean;
+        customerName: string;
+        phone: string;
+        staff: string;
+        menu: string;
+        note: string
+      }>()
+
+      // 予約ごとに開始時間と終了時間を特定
+      dateReservations.forEach((res) => {
+        const resStart = res.start_at.toDate()
+        const resEnd = res.end_at.toDate()
+
+        // 開始時間に最も近い時間枠を見つける
+        let startSlotIndex = -1
+        let endSlotIndex = -1
+
+        timeSlots.forEach((slot, index) => {
+          const [slotHour, slotMinute] = slot.split(':').map(Number) as [number, number]
+          const slotTime = new Date(dateObj)
+          slotTime.setHours(slotHour, slotMinute, 0, 0)
+
+          // 開始時間の時間枠を特定
+          if (resStart.getHours() === slotHour && resStart.getMinutes() === slotMinute) {
+            startSlotIndex = index
+          }
+
+          // 終了時間の時間枠を特定
+          if (resEnd <= new Date(slotTime.getTime() + 15 * 60 * 1000)) {
+            if (endSlotIndex === -1) {
+              endSlotIndex = index
+            }
+          }
+        })
+
+        // 各時間枠に対してデータを設定
+        timeSlots.forEach((slot, index) => {
+          const isStartSlot = index === startSlotIndex
+          const isInRange = index >= startSlotIndex && index <= endSlotIndex && startSlotIndex !== -1
+
+          if (isInRange && !timeSlotData.has(slot)) {
+            timeSlotData.set(slot, {
+              reservation: res,
+              isStart: isStartSlot,
+              customerName: isStartSlot ? (res.customer_name || '名称未設定') : '',
+              phone: isStartSlot ? (res.customer_phone || '') : '',
+              staff: isStartSlot ? getStaffName(res.staff_id) : '',
+              menu: isStartSlot ? res.menu_items.map(m => m.title).join(', ') : '',
+              note: isStartSlot ? (res.note || '') : ''
+            })
+          }
+        })
+      })
+
+      // 各項目行を作成
+      const customerNameRow = ['顧客名', ...timeSlots.map(slot => timeSlotData.get(slot)?.customerName || '')]
+      const phoneRow = ['電話番号', ...timeSlots.map(slot => timeSlotData.get(slot)?.phone || '')]
+      const staffRow = ['スタッフ', ...timeSlots.map(slot => timeSlotData.get(slot)?.staff || '')]
+      const menuRow = ['メニュー', ...timeSlots.map(slot => timeSlotData.get(slot)?.menu || '')]
+      const noteRow = ['備考', ...timeSlots.map(slot => timeSlotData.get(slot)?.note || '')]
+
+      const customerNameRowIndex = currentRow
+      worksheetData.push(customerNameRow)
+      currentRow++
+      worksheetData.push(phoneRow)
+      currentRow++
+      worksheetData.push(staffRow)
+      currentRow++
+      worksheetData.push(menuRow)
+      currentRow++
+      worksheetData.push(noteRow)
+      currentRow++
+
+      // セルのスタイルを設定
+      timeSlots.forEach((slot, colIndex) => {
+        const slotData = timeSlotData.get(slot)
+        const excelCol = colIndex + 1 // 0列目は項目名なので+1
+
+        // 奇数・偶数列の色分け（薄いストライプ）
+        const isOddColumn = (colIndex + 1) % 2 === 1
+        const stripeBgColor = isOddColumn ? 'F9F9F9' : 'FFFFFF'
+
+        // 予約がある場合は薄いグレーで塗りつぶし
+        const bgColor = slotData?.reservation ? 'E8E8E8' : stripeBgColor
+
+        // 各項目行のセルにスタイルを適用
+        for (let rowOffset = 0; rowOffset < 5; rowOffset++) {
+          cellStyles.push({
+            row: customerNameRowIndex + rowOffset,
+            col: excelCol,
+            style: {
+              fill: {
+                fgColor: { rgb: bgColor }
+              }
+            }
+          })
+        }
+      })
+    })
+
+    // ワークブックとワークシートを作成
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+
+    // セルスタイルを適用
+    cellStyles.forEach(({ row, col, style }) => {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+      if (!worksheet[cellAddress]) {
+        worksheet[cellAddress] = { t: 's', v: '' }
+      }
+      // xlsx-js-style用のスタイル形式
+      worksheet[cellAddress].s = {
+        fill: {
+          patternType: 'solid',
+          fgColor: { rgb: style.fill.fgColor.rgb }
+        }
+      }
+    })
+
+    // 列幅の設定（時間枠の数に応じて）
+    const colWidths = [{ wch: 12 }] // 最初の列（項目名）
+    timeSlots.forEach(() => {
+      colWidths.push({ wch: 15 }) // 各時間枠の列
+    })
+    worksheet['!cols'] = colWidths
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '予約一覧')
+
+    // ファイル名を生成（表示期間の開始日）
+    const fileName = `予約一覧_${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}.xlsx`
+
+    // ファイルをダウンロード
+    XLSX.writeFile(workbook, fileName)
+
+    dialog.alert(`${reservations.length}件の予約をExcelに出力しました`, '出力完了')
+  } catch (error) {
+    console.error('Excel出力エラー:', error)
+    dialog.alert('Excelの出力中にエラーが発生しました', 'エラー')
+  }
+}
 </script>
 
 <template>
@@ -760,6 +986,7 @@ onUnmounted(() => {
         <button @click="toggleNotification" class="notify-btn" :class="{ 'active': isNotifyEnabled }">
           {{ isNotifyEnabled ? '🔕 通知OFFにする' : '🔔 通知ONにする' }}
         </button>
+        <button @click="exportReservationsToExcel" class="export-btn" title="当日から未来の予約をExcelに出力">📥 Excel出力</button>
         <button @click="router.push('/admin/customers')" class="nav-link-btn">👥 顧客管理</button>
         <button @click="router.push('/admin/sales')" class="nav-link-btn">📊 売上分析</button>
         <div class="status-badge">🟢 リアルタイム接続中</div>
@@ -1053,6 +1280,23 @@ onUnmounted(() => {
 
 .notify-btn.active:hover {
   background: #95a5a6;
+}
+
+.export-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: bold;
+  margin-right: 0.5rem;
+  transition: all 0.2s;
+}
+
+.export-btn:hover {
+  background: #2980b9;
 }
 
 /* ボディエリア (ここより下で横並び) */
