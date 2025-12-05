@@ -8,6 +8,8 @@ export const useUserStore = defineStore('user', () =>
   const user = ref<User | null>(null)
   // 管理者フラグ（Token の custom claim から判定）
   const isAdmin = ref(false)
+  // 顧客名（リアルタイム更新用）
+  const customerName = ref('')
 
   const refreshAdminStatus = async () => {
     if (!user.value) { isAdmin.value = false; return }
@@ -28,5 +30,9 @@ export const useUserStore = defineStore('user', () =>
     void refreshAdminStatus()
   }
 
-  return { user, setUser, isAdmin, refreshAdminStatus }
+  const setCustomerName = (name: string) => {
+    customerName.value = name
+  }
+
+  return { user, setUser, isAdmin, refreshAdminStatus, customerName, setCustomerName }
 })

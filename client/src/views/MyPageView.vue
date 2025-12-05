@@ -4,8 +4,10 @@ import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
+import { useUserStore } from '../stores/user'
 
 const dialog = useDialogStore()
+const userStore = useUserStore()
 
 interface Reservation {
   id: string
@@ -17,8 +19,10 @@ interface Reservation {
 const reservations = ref<Reservation[]>([])
 const loading = ref(true)
 const currentUser = ref<any>(null)
-const nameKana = ref('')
-const preferredCategory = ref('barber') // 👈 追加
+const nameKanji = ref('') // 姓名（漢字）
+const nameKana = ref('') // 読み仮名（カナ）
+const phoneNumber = ref('') // 電話番号
+const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
 
 const fetchReservations = async (userId: string) => {
@@ -35,7 +39,9 @@ const fetchReservations = async (userId: string) => {
 
     if (docSnap.exists()) {
       const data = docSnap.data()
-      nameKana.value = data.name_kana
+      nameKanji.value = data.name_kanji || ''
+      nameKana.value = data.name_kana || ''
+      phoneNumber.value = data.phone_number || ''
       preferredCategory.value = data.preferred_category || 'barber'
     } else {
       // なければ電話番号で名寄せトライ
@@ -45,7 +51,9 @@ const fetchReservations = async (userId: string) => {
         const custSnap = await getDocs(custQ)
         if (!custSnap.empty) {
           const data = custSnap.docs[0]!.data()
-          nameKana.value = data.name_kana
+          nameKanji.value = data.name_kanji || ''
+          nameKana.value = data.name_kana || ''
+          phoneNumber.value = data.phone_number || ''
           preferredCategory.value = data.preferred_category || 'barber'
         }
       }
@@ -59,16 +67,55 @@ const fetchReservations = async (userId: string) => {
 
 const saveProfile = async () => {
   if (!currentUser.value) return
+
+  // バリデーション: カナと電話番号が必須
+  if (!nameKana.value || nameKana.value.trim() === '') {
+    dialog.alert('お名前（カナ）を入力してください。', '入力エラー')
+    return
+  }
+  if (!phoneNumber.value || phoneNumber.value.trim() === '') {
+    dialog.alert('電話番号を入力してください。', '入力エラー')
+    return
+  }
+
+  // 文字種バリデーション
+  // 漢字名: 漢字、ひらがな、スペースのみ
+  if (nameKanji.value && nameKanji.value.trim() !== '') {
+    const kanjiPattern = /^[ぁ-ん一-龠々\s　]+$/
+    if (!kanjiPattern.test(nameKanji.value)) {
+      dialog.alert('お名前（漢字）は漢字とひらがなで入力してください。', '入力エラー')
+      return
+    }
+  }
+
+  // カナ: 全角カタカナとスペースのみ
+  const kanaPattern = /^[ァ-ヶー\s　]+$/
+  if (!kanaPattern.test(nameKana.value)) {
+    dialog.alert('お名前（カナ）は全角カタカナで入力してください。', '入力エラー')
+    return
+  }
+
+  // 電話番号: 数字とハイフンのみ
+  const phonePattern = /^[0-9\-]+$/
+  if (!phonePattern.test(phoneNumber.value)) {
+    dialog.alert('電話番号は数字とハイフン(-)で入力してください。', '入力エラー')
+    return
+  }
+
   isSavingProfile.value = true
   try {
-    const phone = currentUser.value.email?.split('@')[0] || ''
     await setDoc(doc(db, 'customers', currentUser.value.uid), {
+      name_kanji: nameKanji.value,
       name_kana: nameKana.value,
-      phone_number: phone,
-      preferred_category: preferredCategory.value, // 👈 保存
+      phone_number: phoneNumber.value,
+      preferred_category: preferredCategory.value,
       is_existing_customer: true,
       updated_at: Timestamp.now()
     }, { merge: true })
+
+    // 🔴 ヘッダーの名前を即座に更新（漢字優先、なければカナ）
+    userStore.setCustomerName(nameKanji.value || nameKana.value)
+
     dialog.alert('プロフィールを保存しました')
   } catch (error) { console.error(error); dialog.alert('保存失敗', 'エラー') } finally { isSavingProfile.value = false }
 }
@@ -132,10 +179,25 @@ const formatDate = (ts: Timestamp) => {
         <div class="card profile-card">
           <h3>お客様情報</h3>
           <div class="form-group">
-            <label>お名前 (カナ)</label>
+            <label>お名前（漢字）</label>
+            <div class="input-row">
+              <input type="text" v-model="nameKanji" placeholder="例: 山田 太郎" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>お名前（カナ）<span class="required">*</span></label>
             <div class="input-row">
               <input type="text" v-model="nameKana" placeholder="例: ヤマダ タロウ" />
             </div>
+          </div>
+
+          <div class="form-group">
+            <label>電話番号<span class="required">*</span></label>
+            <div class="input-row">
+              <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
+            </div>
+            <p class="hint">※ 予約時に必要となります。</p>
           </div>
 
           <div class="form-group">
@@ -146,6 +208,9 @@ const formatDate = (ts: Timestamp) => {
               </label>
               <label class="radio-item">
                 <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
+              </label>
+              <label class="radio-item">
+                <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
               </label>
             </div>
             <p class="hint">※ 予約画面の初期表示に反映されます。</p>
@@ -268,6 +333,12 @@ const formatDate = (ts: Timestamp) => {
   font-size: 0.9rem;
 }
 
+.form-group label .required {
+  color: #e74c3c;
+  margin-left: 0.3rem;
+  font-weight: bold;
+}
+
 .input-row input {
   width: 100%;
   padding: 0.7rem;
@@ -279,7 +350,8 @@ const formatDate = (ts: Timestamp) => {
 
 .radio-group {
   display: flex;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .radio-item {
@@ -287,6 +359,7 @@ const formatDate = (ts: Timestamp) => {
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
+  min-width: 100px;
 }
 
 .hint {

@@ -22,7 +22,7 @@ interface Menu {
   order_priority?: number
 }
 interface Staff { id: string; name: string; display_name: string; roles: { accepts_new_customer: boolean; accepts_free_booking: boolean }; is_working: boolean; }
-interface CustomerProfile { id: string; name_kana: string; is_existing_customer: boolean; preferred_category?: string; }
+interface CustomerProfile { id: string; name_kanji?: string; name_kana: string; phone_number?: string; is_existing_customer: boolean; preferred_category?: string; }
 interface ShopConfig { business_hours: { start: string; end: string }; time_slot_interval: number; tax_rate: number; }
 
 const menus = ref<Menu[]>([])
@@ -102,7 +102,9 @@ const checkCustomerStatus = async (user: any) => {
       const data = docSnap.data()
       customerProfile.value = {
         id: docSnap.id,
+        name_kanji: data.name_kanji,
         name_kana: data.name_kana,
+        phone_number: data.phone_number,
         is_existing_customer: data.is_existing_customer,
         preferred_category: data.preferred_category
       }
@@ -124,7 +126,9 @@ const checkCustomerStatus = async (user: any) => {
       const data = snapshot.docs[0]!.data()
       customerProfile.value = {
         id: snapshot.docs[0]!.id,
+        name_kanji: data.name_kanji,
         name_kana: data.name_kana,
+        phone_number: data.phone_number,
         is_existing_customer: data.is_existing_customer,
         preferred_category: data.preferred_category
       }
@@ -237,6 +241,14 @@ watch([reservationDate, selectedStaffId, selectedMenus], () => { fetchAvailableS
 
 const openBookingModal = () => {
   if (selectedMenus.value.length === 0) return dialog.alert('メニューを選択してください')
+
+  // 🔴 名前と電話番号の必須チェック（ダイアログを開く前）
+  if (!customerProfile.value?.name_kana || customerProfile.value.name_kana.trim() === '' ||
+    !customerProfile.value?.phone_number || customerProfile.value.phone_number.trim() === '') {
+    dialog.alert('マイページでお名前と電話番号を登録してから予約してください。', '名前・電話番号未登録')
+    return
+  }
+
   if (availableStaffs.value.length > 0) selectedStaffId.value = availableStaffs.value[0]!.id; else selectedStaffId.value = ''
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
   reservationDate.value = now.toISOString().slice(0, 16)
@@ -258,6 +270,7 @@ const formatDateJP = (dateStr: string) => { if (!dateStr) return ''; const d = n
 
 const submitReservation = async () => {
   if (!reservationDate.value || !currentUser.value || !selectedStaffId.value) return
+
   processing.value = true
   try {
     const startDate = new Date(reservationDate.value); const now = new Date()
@@ -265,7 +278,7 @@ const submitReservation = async () => {
     const duration = totalDuration.value
     const endDate = new Date(startDate.getTime() + duration * 60000)
     const startTimestamp = Timestamp.fromDate(startDate); const endTimestamp = Timestamp.fromDate(endDate)
-    const email = currentUser.value?.email || ''; const customerPhone = email.split('@')[0] || 'unknown'; const uid = currentUser.value?.uid || 'unknown'
+    const uid = currentUser.value?.uid || 'unknown'
     const limitQ = query(collection(db, 'reservations'), where('customer_id', '==', customerProfile.value?.id || uid), where('start_at', '>=', Timestamp.now()), where('status', '!=', 'cancelled'))
     const limitSnapshot = await getDocs(limitQ)
     if (limitSnapshot.size >= 3) throw new Error('予約数の上限(3件)に達しています。')
@@ -278,7 +291,7 @@ const submitReservation = async () => {
     // 🟢 修正4: 保存時も price_with_tax を使う
     const resRef = await addDoc(collection(db, 'reservations'), {
       customer_id: customerProfile.value?.id || uid, customer_name: customerProfile.value?.name_kana || 'WEB予約ゲスト',
-      customer_phone: customerPhone, staff_id: selectedStaffId.value, start_at: startTimestamp, end_at: endTimestamp,
+      customer_phone: customerProfile.value?.phone_number || '', staff_id: selectedStaffId.value, start_at: startTimestamp, end_at: endTimestamp,
       menu_items: selectedMenus.value.map(m => ({ title: m.title, price: m.price_with_tax, duration: m.duration_min })),
       total_price: totalAmount.value, total_duration_min: totalDuration.value, source: 'web', status: 'pending', note: customerNote.value || '', created_at: Timestamp.now()
     })
