@@ -761,6 +761,7 @@ onUnmounted(() => {
           {{ isNotifyEnabled ? '🔕 通知OFFにする' : '🔔 通知ONにする' }}
         </button>
         <button @click="router.push('/admin/customers')" class="nav-link-btn">👥 顧客管理</button>
+        <button @click="router.push('/admin/sales')" class="nav-link-btn">📊 売上分析</button>
         <div class="status-badge">🟢 リアルタイム接続中</div>
         <button @click="$router.push('/admin/settings')" class="settings-link-btn">⚙ 設定</button>
       </div>

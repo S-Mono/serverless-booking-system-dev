@@ -6,7 +6,7 @@ interface DialogOptions
     title?: string
     confirmText?: string
     cancelText?: string
-    type?: 'normal' | 'danger'
+    type?: 'normal' | 'danger' | 'warning'
     alertOnly?: boolean // trueならキャンセルボタンなし(alert代わり)
 }
 
@@ -48,7 +48,7 @@ export const useDialogStore = defineStore('dialog', () =>
     }
 
     // 便利関数: 確認 (OK/キャンセル)
-    const confirm = (msg: string, title = '確認', type: 'normal' | 'danger' = 'normal') =>
+    const confirm = (msg: string, title = '確認', type: 'normal' | 'danger' | 'warning' = 'normal') =>
     {
         return open(msg, { title, type })
     }
