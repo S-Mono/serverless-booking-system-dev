@@ -344,7 +344,9 @@ const requestNotificationPermission = async () => {
     const permission = await Notification.requestPermission()
     console.log('requestNotificationPermission - Notification.permission:', permission)
     if (permission === 'granted') {
+      console.log('Getting FCM token...')
       const token = await getToken(messaging, { vapidKey: VAPID_KEY })
+      console.log('FCM token obtained:', token ? token.substring(0, 20) + '...' : 'null')
       if (token) {
         // 既にDBに存在するかチェック（重複登録防止）
         const docSnap = await getDoc(doc(db, 'admin_tokens', token))
@@ -409,11 +411,13 @@ const requestNotificationPermission = async () => {
         }
       }
     } else {
+      console.log('Notification permission denied:', permission)
       dialog.alert('ブラウザの設定で通知がブロックされています。')
     }
-  } catch (e) {
-    console.error(e)
-    dialog.alert('設定に失敗しました')
+  } catch (e: any) {
+    console.error('Notification setup error:', e)
+    const errorMsg = e?.message || e?.code || '不明なエラー'
+    dialog.alert(`設定に失敗しました: ${errorMsg}`)
   }
 }
 // 🔔 4. 通知OFF処理 (新規)
@@ -431,10 +435,13 @@ const turnOffNotification = async () => {
 
       console.log('Notification turned off and localStorage cleared')
       dialog.alert('この端末での通知を【OFF】にしました。')
+    } else {
+      console.warn('No token found for turning off notification')
     }
-  } catch (e) {
-    console.error(e)
-    dialog.alert('解除に失敗しました')
+  } catch (e: any) {
+    console.error('Notification turn-off error:', e)
+    const errorMsg = e?.message || e?.code || '不明なエラー'
+    dialog.alert(`解除に失敗しました: ${errorMsg}`)
   }
 }
 
