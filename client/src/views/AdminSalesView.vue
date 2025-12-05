@@ -59,16 +59,16 @@ const currentSalesData = ref<DailySales[]>([])
 const pastSalesData = ref<DailySales[]>([])
 
 // 合計
-const currentTotal = computed(() => 
+const currentTotal = computed(() =>
     currentSalesData.value.reduce((sum, day) => sum + day.sales, 0)
 )
-const currentCount = computed(() => 
+const currentCount = computed(() =>
     currentSalesData.value.reduce((sum, day) => sum + day.count, 0)
 )
-const pastTotal = computed(() => 
+const pastTotal = computed(() =>
     pastSalesData.value.reduce((sum, day) => sum + day.sales, 0)
 )
-const pastCount = computed(() => 
+const pastCount = computed(() =>
     pastSalesData.value.reduce((sum, day) => sum + day.count, 0)
 )
 
@@ -143,7 +143,7 @@ const fetchSalesData = async (startDate: Date, endDate: Date): Promise<DailySale
         })
 
         // 日付順にソート
-        return Array.from(dailyMap.values()).sort((a, b) => 
+        return Array.from(dailyMap.values()).sort((a, b) =>
             a.date.localeCompare(b.date)
         )
     } catch (e) {
@@ -285,22 +285,13 @@ const togglePastData = async () => {
                             <div class="chart-content">
                                 <svg class="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none">
                                     <!-- 現在の折れ線 -->
-                                    <polyline
-                                        v-if="currentSalesData.length > 0"
-                                        :points="currentSalesData.map((d, i) => 
-                                            `${(i / (currentSalesData.length - 1)) * 100},${100 - (d.sales / maxSales) * 100}`
-                                        ).join(' ')"
-                                        fill="none"
-                                        stroke="#42b883"
-                                        stroke-width="2"
-                                        vector-effect="non-scaling-stroke"
-                                    />
+                                    <polyline v-if="currentSalesData.length > 0" :points="currentSalesData.map((d, i) =>
+                                        `${(i / (currentSalesData.length - 1)) * 100},${100 - (d.sales / maxSales) * 100}`
+                                    ).join(' ')" fill="none" stroke="#42b883" stroke-width="2"
+                                        vector-effect="non-scaling-stroke" />
                                 </svg>
                                 <div class="bars-container">
-                                    <div 
-                                        v-for="day in currentSalesData" 
-                                        :key="day.date" 
-                                        class="bar-wrapper">
+                                    <div v-for="day in currentSalesData" :key="day.date" class="bar-wrapper">
                                         <div class="bar" :style="{ height: getBarHeight(day.sales) }">
                                             <div class="bar-tooltip">
                                                 <div>{{ formatDisplayDate(day.date) }}</div>
@@ -351,14 +342,17 @@ const togglePastData = async () => {
                     <div class="summary-card past">
                         <div class="summary-label">総売上</div>
                         <div class="summary-value">¥{{ pastTotal.toLocaleString() }}</div>
-                        <div class="summary-diff" :class="{ 'positive': currentTotal > pastTotal, 'negative': currentTotal < pastTotal }">
-                            {{ currentTotal > pastTotal ? '+' : '' }}{{ ((currentTotal - pastTotal) / (pastTotal || 1) * 100).toFixed(1) }}%
+                        <div class="summary-diff"
+                            :class="{ 'positive': currentTotal > pastTotal, 'negative': currentTotal < pastTotal }">
+                            {{ currentTotal > pastTotal ? '+' : '' }}{{ ((currentTotal - pastTotal) / (pastTotal || 1) *
+                            100).toFixed(1) }}%
                         </div>
                     </div>
                     <div class="summary-card past">
                         <div class="summary-label">予約件数</div>
                         <div class="summary-value">{{ pastCount }}件</div>
-                        <div class="summary-diff" :class="{ 'positive': currentCount > pastCount, 'negative': currentCount < pastCount }">
+                        <div class="summary-diff"
+                            :class="{ 'positive': currentCount > pastCount, 'negative': currentCount < pastCount }">
                             {{ currentCount > pastCount ? '+' : '' }}{{ currentCount - pastCount }}件
                         </div>
                     </div>
@@ -382,22 +376,13 @@ const togglePastData = async () => {
                         <div class="chart-content">
                             <svg class="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none">
                                 <!-- 過去の折れ線 -->
-                                <polyline
-                                    v-if="pastSalesData.length > 0"
-                                    :points="pastSalesData.map((d, i) => 
-                                        `${(i / (pastSalesData.length - 1)) * 100},${100 - (d.sales / maxSales) * 100}`
-                                    ).join(' ')"
-                                    fill="none"
-                                    stroke="#95a5a6"
-                                    stroke-width="2"
-                                    vector-effect="non-scaling-stroke"
-                                />
+                                <polyline v-if="pastSalesData.length > 0" :points="pastSalesData.map((d, i) =>
+                                    `${(i / (pastSalesData.length - 1)) * 100},${100 - (d.sales / maxSales) * 100}`
+                                ).join(' ')" fill="none" stroke="#95a5a6" stroke-width="2"
+                                    vector-effect="non-scaling-stroke" />
                             </svg>
                             <div class="bars-container">
-                                <div 
-                                    v-for="day in pastSalesData" 
-                                    :key="day.date" 
-                                    class="bar-wrapper">
+                                <div v-for="day in pastSalesData" :key="day.date" class="bar-wrapper">
                                     <div class="bar past" :style="{ height: getBarHeight(day.sales) }">
                                         <div class="bar-tooltip">
                                             <div>{{ formatDisplayDate(day.date) }}</div>
