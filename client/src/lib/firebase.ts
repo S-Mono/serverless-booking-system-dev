@@ -21,6 +21,6 @@ export const db = getFirestore(app)
 export const messaging = getMessaging(app)
 
 // VAPIDキー (Firebaseコンソール > プロジェクト設定 > Cloud Messaging > ウェブ設定 で生成した鍵)
-// ※まだの場合は仮置きし、後で差し替えてください
-//export const VAPID_KEY = "ここにご自身のVAPID鍵ペア(公開鍵)を入れてください";
-export const VAPID_KEY = "BK8qd-xiunI6hy87n2LyLWNdhzeS7DMldCTGmfr7Q6F3Gan5EbN1t5DzKzSxRHLvTry74tvD47gASvD7nadBK8w";
+// 開発環境用
+export const VAPID_KEY = "BFBlmGzyMviT22QFy7sx9lmphmOjX-Lat-ERapY3bpefMFVkxJcZraUawKlvbKmngzruvxWYzQgKgVc1G41EdmU";
+
