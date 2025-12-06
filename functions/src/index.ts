@@ -17,6 +17,15 @@ export const onReservationCreated = onDocumentCreated(
 
     const reservation = snap.data();
 
+    // 🔴 WEB予約のみ通知を送信（電話予約は通知しない）
+    if (reservation.source !== "web") {
+      logger.info("Skipping notification for non-web reservation", {
+        reservationId: snap.id,
+        source: reservation.source,
+      });
+      return;
+    }
+
     // 日付の整形
     // 80文字制限を回避するため、条件判定を変数に切り出し
     const hasToDate =

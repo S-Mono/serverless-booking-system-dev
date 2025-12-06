@@ -65,6 +65,14 @@ const newReservation = ref({
   staff_id: '', start_time: '', customer_name: '', customer_phone: '', menu_id: '', note: ''
 })
 
+// バリデーションエラー管理
+const validationErrors = ref({
+  start_time: '',
+  menu_id: '',
+  customer_name: '',
+  customer_phone: ''
+})
+
 // 共有の Audio インスタンス（フォールバック用）
 const notificationSound = new Audio('/sounds/Chime-Announce05-3.mp3');
 
@@ -446,7 +454,39 @@ const turnOffNotification = async () => {
 }
 
 const submitReservation = async () => {
-  if (!newReservation.value.menu_id) return
+  // バリデーションエラーをリセット
+  validationErrors.value = {
+    start_time: '',
+    menu_id: '',
+    customer_name: '',
+    customer_phone: ''
+  }
+
+  // バリデーションチェック
+  let hasError = false
+
+  if (!newReservation.value.start_time) {
+    validationErrors.value.start_time = '開始日時を入力してください'
+    hasError = true
+  }
+
+  if (!newReservation.value.menu_id) {
+    validationErrors.value.menu_id = 'メニューを選択してください'
+    hasError = true
+  }
+
+  if (!newReservation.value.customer_name || newReservation.value.customer_name.trim() === '') {
+    validationErrors.value.customer_name = '顧客名を入力してください'
+    hasError = true
+  }
+
+  if (!newReservation.value.customer_phone || newReservation.value.customer_phone.trim() === '') {
+    validationErrors.value.customer_phone = '電話番号を入力してください'
+    hasError = true
+  }
+
+  if (hasError) return
+
   const menu = menus.value.find(m => m.id === newReservation.value.menu_id)
   if (!menu) return
   const startDate = new Date(newReservation.value.start_time)
@@ -455,8 +495,8 @@ const submitReservation = async () => {
     staff_id: newReservation.value.staff_id,
     start_at: Timestamp.fromDate(startDate),
     end_at: Timestamp.fromDate(endDate),
-    customer_name: newReservation.value.customer_name || '電話予約',
-    customer_phone: newReservation.value.customer_phone || '',
+    customer_name: newReservation.value.customer_name,
+    customer_phone: newReservation.value.customer_phone,
     menu_items: [{ title: menu.title, duration: menu.duration_min, price: getTaxPrice(menu.price) }],
     source: 'phone', note: newReservation.value.note || '', status: 'confirmed'
   }
@@ -1142,16 +1182,33 @@ const exportReservationsToExcel = async () => {
         <div class="form-group"><label>担当スタッフ</label><select v-model="newReservation.staff_id" disabled>
             <option v-for="s in staffs" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select></div>
-        <div class="form-group"><label>開始日時</label><input type="datetime-local" v-model="newReservation.start_time">
+        <div class="form-group">
+          <label>開始日時 <span style="color: #e74c3c;">*</span></label>
+          <input type="datetime-local" v-model="newReservation.start_time"
+            :class="{ 'input-error': validationErrors.start_time }">
+          <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
         </div>
-        <div class="form-group"><label>メニュー</label><select v-model="newReservation.menu_id">
+        <div class="form-group">
+          <label>メニュー <span style="color: #e74c3c;">*</span></label>
+          <select v-model="newReservation.menu_id" :class="{ 'input-error': validationErrors.menu_id }">
             <option value="" disabled>選択してください</option>
             <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
-          </select></div>
-        <div class="form-group"><label>顧客名 (任意)</label><input type="text" v-model="newReservation.customer_name"
-            placeholder="例: 山田様"></div>
-        <div class="form-group"><label>電話番号 (任意)</label><input type="tel" v-model="newReservation.customer_phone"
-            placeholder="09012345678"></div>
+          </select>
+          <span v-if="validationErrors.menu_id" class="error-message">{{ validationErrors.menu_id }}</span>
+        </div>
+        <div class="form-group">
+          <label>顧客名 <span style="color: #e74c3c;">*</span></label>
+          <input type="text" v-model="newReservation.customer_name"
+            :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
+          <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
+        </div>
+        <div class="form-group">
+          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
+          <input type="tel" v-model="newReservation.customer_phone"
+            :class="{ 'input-error': validationErrors.customer_phone }" placeholder="09012345678">
+          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
+            }}</span>
+        </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>
         </div>
@@ -2107,6 +2164,18 @@ textarea {
 .delete-modal .modal-actions {
   gap: 0.5rem;
   justify-content: center;
+}
+
+.input-error {
+  border-color: #e74c3c !important;
+  background-color: #ffebee !important;
+}
+
+.error-message {
+  color: #e74c3c;
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+  display: block;
 }
 
 @media (max-width: 768px) {
