@@ -23,6 +23,7 @@ interface Staff {
   roles: { accepts_new_customer: boolean; accepts_free_booking: boolean };
   is_working: boolean;
   code: string; // 👈 CSV用コード
+  color?: string; // 👈 スタッフの色
 }
 
 const staffs = ref<Staff[]>([])
@@ -39,7 +40,8 @@ const config = ref<ShopConfig>({
 const newStaff = ref({
   code: '',
   name: '', display_name: '', order_priority: 99,
-  roles: { accepts_new_customer: true, accepts_free_booking: true }, is_working: true
+  roles: { accepts_new_customer: true, accepts_free_booking: true }, is_working: true,
+  color: '#3498db'
 })
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
@@ -52,7 +54,7 @@ const fetchData = async () => {
     const snap = await getDocs(collection(db, 'staffs'))
     staffs.value = snap.docs.map(doc => {
       const d = doc.data()
-      return { id: doc.id, ...d, is_working: d.is_working ?? true, code: d.code || '' }
+      return { id: doc.id, ...d, is_working: d.is_working ?? true, code: d.code || '', color: d.color || '#3498db' }
     })
       .sort((a: any, b: any) => a.order_priority - b.order_priority) as Staff[]
 
@@ -229,6 +231,10 @@ onMounted(() => { fetchData() })
                     </div>
                     <div class="input-group"><label>略称</label><input type="text" v-model="staff.name" /></div>
                     <div class="input-group"><label>表示名</label><input type="text" v-model="staff.display_name" /></div>
+                    <div class="input-group" style="flex: 0 0 100px;">
+                      <label>色</label>
+                      <input type="color" v-model="staff.color" style="height: 38px; cursor: pointer;" />
+                    </div>
                   </div>
                   <div class="roles-grid">
                     <label><input type="checkbox" v-model="staff.is_working"> 🟢 出勤</label>
@@ -239,7 +245,7 @@ onMounted(() => { fetchData() })
               </div>
 
               <div class="add-staff-area">
-                <h4>➕ スタッフ追加</h4>
+                <h4>➥ スタッフ追加</h4>
                 <div class="staff-grid">
                   <div class="input-group code-group">
                     <input type="text" v-model="newStaff.code" placeholder="コード" />
@@ -249,6 +255,10 @@ onMounted(() => { fetchData() })
                   </div>
                   <div class="input-group">
                     <input type="text" v-model="newStaff.display_name" placeholder="表示名" />
+                  </div>
+                  <div class="input-group" style="flex: 0 0 100px;">
+                    <label>色</label>
+                    <input type="color" v-model="newStaff.color" style="height: 38px; cursor: pointer;" />
                   </div>
                 </div>
                 <button @click="addStaff" class="add-btn">追加</button>

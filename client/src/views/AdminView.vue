@@ -17,7 +17,7 @@ const NOTIFICATION_TOKEN_KEY = 'admin_notification_token'
 
 const isNotifyEnabled = ref(false) // 現在通知ONかどうか
 
-interface Staff { id: string; name: string }
+interface Staff { id: string; name: string; color?: string }
 interface Reservation {
   id: string; start_at: Timestamp; end_at: Timestamp; staff_id: string
   customer_id?: string; // 👈 追加
@@ -618,11 +618,13 @@ const onMouseUp = () => {
 const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
 const formatDate = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getMonth() + 1}/${d.getDate()}` }
 const getStaffName = (id: string) => staffs.value.find(s => s.id === id)?.name || '未定'
+const getStaffColor = (id: string) => staffs.value.find(s => s.id === id)?.color || '#3498db'
 const toLocalISOString = (date: Date) => {
   const pad = (n: number) => n < 10 ? '0' + n : n
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes())
 }
 const formatDateJP = (d: Date) => { const days = ['日', '月', '火', '水', '木', '金', '土']; return `${d.getFullYear()}年 ${d.getMonth() + 1}月 ${d.getDate()}日 (${days[d.getDay()]})` }
+const formatDateShort = (d: Date) => { const days = ['日', '月', '火', '水', '木', '金', '土']; const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); return `${y}/${m}/${day} (${days[d.getDay()]})`; }
 const getDragBarStyle = computed(() => {
   if (!dragStartTime.value || !dragEndTime.value) return {}
   const start = dragStartTime.value.getTime(); const end = dragEndTime.value.getTime()
@@ -642,6 +644,19 @@ const getTooltipText = (res: Reservation) => {
 const getReservationClass = (res: Reservation) => {
   if (res.status === 'pending') return 'res-pending'
   return res.source === 'phone' ? 'res-phone' : 'res-web'
+}
+const getReservationStyle = (res: Reservation) => {
+  const baseColor = getStaffColor(res.staff_id)
+  if (res.status === 'pending') {
+    return {
+      backgroundColor: baseColor,
+      backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.2) 5px, rgba(255, 255, 255, 0.2) 10px)',
+      border: `1px solid ${baseColor}`
+    }
+  }
+  return {
+    backgroundColor: baseColor
+  }
 }
 const calendarDays = computed(() => {
   const year = selectedDate.value.getFullYear(); const month = selectedDate.value.getMonth()
@@ -1052,8 +1067,8 @@ const exportReservationsToExcel = async () => {
             </div>
             <div class="list-footer"
               style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem">
-              <div style="font-size:0.85rem;color:#666">表示期間: {{ selectedDate.toDateString() }} 〜
-                {{ new Date(new Date(selectedDate).getTime() + (listWindowDays * 24 * 3600 * 1000)).toDateString() }}
+              <div style="font-size:0.85rem;color:#666">表示期間: {{ formatDateShort(selectedDate) }} 〜
+                {{ formatDateShort(new Date(new Date(selectedDate).getTime() + (listWindowDays * 24 * 3600 * 1000))) }}
               </div>
               <div>
                 <button class="load-more-btn" @click="loadMoreDays(30)">さらに30日を読み込む</button>
@@ -1100,7 +1115,7 @@ const exportReservationsToExcel = async () => {
                 <transition-group name="fade">
                   <template v-for="res in dayReservations" :key="res.id">
                     <div v-if="res.staff_id === staff.id" class="reservation-bar" :class="getReservationClass(res)"
-                      :style="{ left: `${getLeftPosition(res.start_at)}%`, width: `${getWidth(res.start_at, res.end_at)}%` }"
+                      :style="{ ...getReservationStyle(res), left: `${getLeftPosition(res.start_at)}%`, width: `${getWidth(res.start_at, res.end_at)}%` }"
                       :title="getTooltipText(res)" @mousedown.stop @click.stop="openReservationDetail(res)">
                       <span class="bar-text">
                         <span v-if="res.status === 'pending'">【未】</span>
@@ -1744,7 +1759,7 @@ const exportReservationsToExcel = async () => {
 .staff-row {
   display: flex;
   height: 60px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #ccc;
   min-width: 800px;
 }
 
@@ -1756,7 +1771,7 @@ const exportReservationsToExcel = async () => {
   justify-content: center;
   font-weight: bold;
   background: #f9f9f9;
-  border-right: 1px solid #ddd;
+  border-right: 2px solid #bbb;
   font-size: 0.85rem;
   position: sticky;
   left: 0;
@@ -1782,7 +1797,7 @@ const exportReservationsToExcel = async () => {
 
 .grid-line {
   flex: 1;
-  border-right: 1px dashed #eee;
+  border-right: 1px solid #ddd;
   height: 100%;
 }
 
@@ -1808,20 +1823,6 @@ const exportReservationsToExcel = async () => {
   z-index: 10;
   opacity: 1;
   transform: scale(1.01);
-}
-
-.reservation-bar.res-web {
-  background-color: #3498db;
-}
-
-.reservation-bar.res-phone {
-  background-color: #e67e22;
-}
-
-.reservation-bar.res-pending {
-  background-color: #9b59b6;
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.2) 5px, rgba(255, 255, 255, 0.2) 10px);
-  border: 1px solid #8e44ad;
 }
 
 .drag-preview-bar {
