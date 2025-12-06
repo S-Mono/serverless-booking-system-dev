@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { db } from '../lib/firebase'
+import { db, auth } from '../lib/firebase'
 import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, getDoc } from 'firebase/firestore'
+import { signOut } from 'firebase/auth'
 import { seedDatabase } from '../lib/seed'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
@@ -125,6 +126,15 @@ const handleSeed = async () => {
     fetchData()
   }
 }
+
+const handleLogout = async () => {
+  const ok = await dialog.confirm('ログアウトしますか？', '確認')
+  if (ok) {
+    await signOut(auth)
+    router.push('/admin-login')
+  }
+}
+
 const goBack = () => router.push('/admin')
 
 onMounted(() => { fetchData() })
@@ -135,6 +145,7 @@ onMounted(() => { fetchData() })
     <header class="settings-header">
       <button @click="goBack" class="back-btn">◀ ダッシュボード</button>
       <h2>システム設定</h2>
+      <button @click="handleLogout" class="logout-btn">ログアウト</button>
     </header>
 
     <main class="settings-body">
@@ -300,6 +311,7 @@ onMounted(() => { fetchData() })
 .settings-header h2 {
   margin: 0;
   font-size: 1.2rem;
+  flex: 1;
 }
 
 .back-btn {
@@ -313,6 +325,20 @@ onMounted(() => { fetchData() })
 
 .back-btn:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.logout-btn {
+  background: #e74c3c;
+  border: none;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.logout-btn:hover {
+  background: #c0392b;
 }
 
 .settings-body {

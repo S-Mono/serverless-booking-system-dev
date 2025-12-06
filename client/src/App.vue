@@ -103,7 +103,7 @@ const goToMessages = () => {
     <header>
       <div :class="['header-inner', isAdminPage ? 'container-fluid' : 'container']">
         <h1>
-          <RouterLink to="/" class="logo-link" @click="closeMenu">💈 美理容予約</RouterLink>
+          <RouterLink :to="isAdminPage ? '/admin' : '/'" class="logo-link" @click="closeMenu">💈 理美容予約システム</RouterLink>
         </h1>
 
         <div v-if="userStore.user && !isAdminPage" class="header-actions">
@@ -118,7 +118,7 @@ const goToMessages = () => {
         </button>
 
         <nav class="nav-menu" :class="{ open: isMenuOpen }">
-          <div v-if="userStore.user" class="menu-group">
+          <div v-if="userStore.user && !isAdminPage" class="menu-group">
             <span class="user-welcome">ようこそ {{ userStore.customerName || 'ゲスト' }} 様</span>
             <button class="nav-item bell-menu-item" @click="goToMessages">
               お知らせ <span v-if="unreadCount > 0" class="badge-inline">{{ unreadCount }}</span>
@@ -126,7 +126,7 @@ const goToMessages = () => {
             <RouterLink to="/mypage" class="nav-item mypage-btn" @click="closeMenu">マイページ</RouterLink>
             <button @click="handleLogout" class="logout-btn">ログアウト</button>
           </div>
-          <RouterLink v-else to="/login" class="nav-item login-btn" @click="closeMenu">ログイン / 登録</RouterLink>
+          <RouterLink v-else-if="!isAdminPage" to="/login" class="nav-item login-btn" @click="closeMenu">ログイン / 登録</RouterLink>
         </nav>
 
         <div v-if="isMenuOpen" class="menu-overlay" @click="closeMenu"></div>
