@@ -228,8 +228,8 @@ const initData = async (fetchMaster = true) => {
           // 1分以内に作成された予約（＝過去データ取得時ではなく、今の新規予約）なら
           if ((now - createdAt) < 60000 && !loading.value) {
 
-            // 🔴 修正: 通知がONのときだけ実行する条件を追加
-            if (isNotifyEnabled.value) {
+            // 🔴 修正: 通知がONのときかつWEB予約のときだけ実行する
+            if (isNotifyEnabled.value && data.source === 'web') {
               // avoid duplicates when FCM also delivers the same reservation
               const rId = change.doc.id
               if (isRecentlyNotified(rId)) {
