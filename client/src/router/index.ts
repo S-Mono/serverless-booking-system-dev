@@ -42,6 +42,11 @@ const router = createRouter({
       name: 'terms',
       component: () => import('../views/TermsOfServiceView.vue')
     },
+    {
+      path: '/support',
+      name: 'support',
+      component: () => import('../views/CustomerSupportView.vue')
+    },
     
     // 管理画面ルート群
     {

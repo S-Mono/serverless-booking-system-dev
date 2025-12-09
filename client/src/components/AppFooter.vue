@@ -10,8 +10,11 @@ import { RouterLink } from 'vue-router'
                 <RouterLink to="/terms" class="footer-link">利用規約</RouterLink>
                 <span class="footer-divider">|</span>
                 <RouterLink to="/privacy" class="footer-link">プライバシーポリシー</RouterLink>
+                <span class="footer-divider">|</span>
+                <RouterLink to="/support" class="footer-link">カスタマーサポート</RouterLink>
             </div>
-            <p class="footer-credit">効果音: <a href="https://otologic.jp" target="_blank" rel="noopener noreferrer" class="footer-link">OtoLogic</a></p>
+            <p class="footer-credit">効果音: <a href="https://otologic.jp" target="_blank" rel="noopener noreferrer"
+                    class="footer-link">OtoLogic</a></p>
         </div>
     </footer>
 </template>
