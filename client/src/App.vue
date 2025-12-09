@@ -139,7 +139,7 @@ const goToMessages = () => {
       <RouterView />
     </main>
 
-    <AppFooter v-if="!isAdminPage" />
+    <AppFooter />
   </div>
 </template>
 
@@ -162,7 +162,6 @@ header {
 }
 
 main {
-  flex: 1;
   width: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -175,11 +174,17 @@ main {
 
 .app-layout.admin-mode header {
   position: relative;
+  flex-shrink: 0;
 }
 
 .app-layout.admin-mode main {
-  overflow: hidden;
-  height: calc(100vh - 60px);
+  overflow: auto;
+  flex: 1;
+  height: auto;
+}
+
+.app-layout.admin-mode footer {
+  flex-shrink: 0;
 }
 
 .container {

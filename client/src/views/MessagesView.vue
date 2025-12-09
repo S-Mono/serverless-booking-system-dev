@@ -251,8 +251,8 @@ onMounted(() => {
 .messages-container {
     max-width: 800px;
     margin: 0 auto;
-    /* App.vueのヘッダー(60px)を引いた高さを確保 */
-    height: calc(100vh - 60px);
+    /* App.vueのヘッダー(60px)とフッター(80px)を引いた高さを確保 */
+    height: calc(100vh - 60px - 80px);
     display: flex;
     flex-direction: column;
     overflow: hidden;

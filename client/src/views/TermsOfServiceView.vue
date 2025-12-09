@@ -165,7 +165,7 @@ const goBack = () => {
 .terms-container {
     max-width: 800px;
     margin: 0 auto;
-    height: calc(100vh - 60px);
+    height: calc(100vh - 60px - 80px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
