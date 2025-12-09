@@ -77,6 +77,10 @@ onMounted(async () => {
       console.log('Initializing LINE Mini App:', miniAppId)
       await liff.init({ liffId: miniAppId })
 
+      console.log('LIFF initialized successfully')
+      console.log('liff.isInClient():', liff.isInClient())
+      console.log('liff.isLoggedIn():', liff.isLoggedIn())
+
       if (liff.isInClient()) {
         isLineApp.value = true
         console.log('Running in LINE app')
@@ -86,7 +90,11 @@ onMounted(async () => {
           console.log('Already logged in, attempting auto-login...')
           // 自動ログイン処理を実行
           await autoLoginWithLine()
+        } else {
+          console.warn('Not logged in in LINE app - this should not happen in Mini App')
         }
+      } else {
+        console.log('Not running in LINE app (browser or other)')
       }
     } else {
       console.warn('VITE_MINI_APP_ID is not defined')
@@ -104,34 +112,45 @@ onMounted(async () => {
  */
 const autoLoginWithLine = async () => {
   try {
+    console.log('=== autoLoginWithLine START ===')
     socialAuth.value = 'line'
     message.value = 'LINEアカウントで認証中...'
 
     await setPersistence(auth, browserLocalPersistence)
+    console.log('Getting LINE profile...')
     const profile = await liff.getProfile()
+    console.log('LINE profile:', profile)
+    
     const lineUserId = profile.userId
     const lineName = profile.displayName
     const firebaseEmail = `line_${lineUserId}${LINE_DOMAIN}`
     const firebasePassword = `line_pass_${lineUserId}`
 
+    console.log('Firebase email:', firebaseEmail)
+
     let user: User
     try {
+      console.log('Attempting to sign in...')
       const cred = await signInWithEmailAndPassword(auth, firebaseEmail, firebasePassword)
       user = cred.user
       console.log('LINE user signed in:', user.uid)
     } catch (error: any) {
+      console.log('Sign in error:', error.code, error.message)
       if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
         console.log('Creating new LINE user...')
         const cred = await createUserWithEmailAndPassword(auth, firebaseEmail, firebasePassword)
         user = cred.user
+        console.log('New LINE user created:', user.uid)
       } else {
         throw error
       }
     }
 
+    console.log('Creating customer data...')
     await createCustomerData(user, 'line', lineName)
 
     // 成功時はオーバーレイをクリアしてから遷移
+    console.log('Login successful, redirecting to /')
     socialAuth.value = null
     router.push('/')
   } catch (error: any) {
