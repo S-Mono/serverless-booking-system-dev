@@ -32,6 +32,16 @@ const router = createRouter({
       name: 'messages',
       component: () => import('../views/MessagesView.vue')
     },
+    {
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('../views/PrivacyPolicyView.vue')
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: () => import('../views/TermsOfServiceView.vue')
+    },
     
     // 管理画面ルート群
     {

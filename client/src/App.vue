@@ -7,6 +7,7 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { useUserStore } from './stores/user'
 import { useLineAuthStore } from './stores/lineAuth'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import AppFooter from './components/AppFooter.vue'
 
 const userStore = useUserStore()
 const lineAuthStore = useLineAuthStore()
@@ -126,7 +127,8 @@ const goToMessages = () => {
             <RouterLink to="/mypage" class="nav-item mypage-btn" @click="closeMenu">マイページ</RouterLink>
             <button @click="handleLogout" class="logout-btn">ログアウト</button>
           </div>
-          <RouterLink v-else-if="!isAdminPage" to="/login" class="nav-item login-btn" @click="closeMenu">ログイン / 登録</RouterLink>
+          <RouterLink v-else-if="!isAdminPage" to="/login" class="nav-item login-btn" @click="closeMenu">ログイン / 登録
+          </RouterLink>
         </nav>
 
         <div v-if="isMenuOpen" class="menu-overlay" @click="closeMenu"></div>
@@ -136,6 +138,8 @@ const goToMessages = () => {
     <main :class="[isAdminPage ? 'container-fluid' : 'container']">
       <RouterView />
     </main>
+
+    <AppFooter v-if="!isAdminPage" />
   </div>
 </template>
 
