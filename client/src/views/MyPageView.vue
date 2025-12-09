@@ -26,6 +26,11 @@ const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
 const isProfileOpen = ref(false) // お客様情報の開閉状態
 
+// お問い合わせフォーム
+const isContactFormOpen = ref(false)
+const contactMessage = ref('')
+const isSendingContact = ref(false)
+
 const fetchReservations = async (userId: string) => {
   loading.value = true
   try {
@@ -158,6 +163,58 @@ const goBack = () => {
   })
 }
 
+// お問い合わせ送信
+const sendContactForm = async () => {
+  if (!currentUser.value) {
+    dialog.alert('ログインが必要です。', 'エラー')
+    return
+  }
+
+  if (!contactMessage.value || contactMessage.value.trim() === '') {
+    dialog.alert('お問い合わせ内容を入力してください。', '入力エラー')
+    return
+  }
+
+  isSendingContact.value = true
+  try {
+    // お客様情報を取得
+    const customerDocRef = doc(db, 'customers', currentUser.value.uid)
+    const customerSnap = await getDoc(customerDocRef)
+    const customerData = customerSnap.exists() ? customerSnap.data() : {}
+
+    // お問い合わせ内容をFirestoreに保存
+    const contactRef = doc(collection(db, 'contacts'))
+    await setDoc(contactRef, {
+      customer_id: currentUser.value.uid,
+      customer_name: customerData.name_kanji || customerData.name_kana || 'ゲスト',
+      customer_email: currentUser.value.email || '',
+      customer_phone: customerData.phone_number || phoneNumber.value || '',
+      message: contactMessage.value,
+      created_at: Timestamp.now(),
+      status: 'pending'
+    })
+
+    // メッセージコレクションにも通知を追加（お客様が確認できるように）
+    const messageRef = doc(collection(db, 'messages'))
+    await setDoc(messageRef, {
+      customer_id: currentUser.value.uid,
+      title: 'お問い合わせを受け付けました',
+      body: `お問い合わせ内容:\n${contactMessage.value}\n\n折り返しご連絡いたしますので、しばらくお待ちください。`,
+      is_read: false,
+      created_at: Timestamp.now()
+    })
+
+    dialog.alert('お問い合わせを送信しました。\n折り返しご連絡いたしますので、しばらくお待ちください。', '送信完了')
+    contactMessage.value = ''
+    isContactFormOpen.value = false
+  } catch (error) {
+    console.error('お問い合わせ送信エラー:', error)
+    dialog.alert('送信に失敗しました。時間をおいて再度お試しください。', 'エラー')
+  } finally {
+    isSendingContact.value = false
+  }
+}
+
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
     currentUser.value = user
@@ -231,6 +288,39 @@ const formatDate = (ts: Timestamp) => {
 
               <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
                 {{ isSavingProfile ? '保存中...' : '保存する' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- お問い合わせフォーム -->
+          <div class="card contact-card">
+            <div class="profile-header">
+              <h3>お問い合わせ</h3>
+              <button @click="isContactFormOpen = !isContactFormOpen" class="toggle-btn">
+                {{ isContactFormOpen ? '▲ 閉じる' : '▼ 開く' }}
+              </button>
+            </div>
+
+            <div v-show="isContactFormOpen" class="contact-form">
+              <div class="phone-info">
+                <p class="phone-label">店舗直通電話</p>
+                <a href="tel:011-694-5449" class="phone-number">📞 011-694-5449</a>
+                <p class="phone-hint">営業時間内にお電話いただくとすぐに対応できます</p>
+              </div>
+
+              <div class="divider-or">
+                <span>または</span>
+              </div>
+
+              <div class="form-group">
+                <label>お問い合わせ内容<span class="required">*</span></label>
+                <textarea v-model="contactMessage" placeholder="ご質問やご要望をご記入ください" rows="6"
+                  :disabled="isSendingContact"></textarea>
+                <p class="hint">※ 内容を確認後、メールまたはお電話にてご連絡いたします。</p>
+              </div>
+
+              <button @click="sendContactForm" :disabled="isSendingContact" class="save-btn">
+                {{ isSendingContact ? '送信中...' : '送信する' }}
               </button>
             </div>
           </div>
@@ -467,6 +557,98 @@ const formatDate = (ts: Timestamp) => {
 
 .save-btn:disabled {
   background: #ccc;
+  cursor: not-allowed;
+}
+
+/* お問い合わせフォーム */
+.contact-card {
+  margin-top: 1.5rem;
+}
+
+.contact-form {
+  padding: 1rem;
+}
+
+.phone-info {
+  background: #f0f8ff;
+  border: 2px solid #42b883;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.phone-label {
+  font-size: 0.9rem;
+  color: #666;
+  margin: 0 0 0.5rem 0;
+}
+
+.phone-number {
+  display: inline-block;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #42b883;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.phone-number:hover {
+  background: rgba(66, 184, 131, 0.1);
+}
+
+.phone-hint {
+  font-size: 0.75rem;
+  color: #999;
+  margin: 0.5rem 0 0 0;
+}
+
+.divider-or {
+  text-align: center;
+  margin: 1.5rem 0;
+  position: relative;
+}
+
+.divider-or::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #ddd;
+  z-index: 0;
+}
+
+.divider-or span {
+  background: white;
+  padding: 0 1rem;
+  color: #999;
+  font-size: 0.9rem;
+  position: relative;
+  z-index: 1;
+}
+
+textarea {
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: #42b883;
+}
+
+textarea:disabled {
+  background: #f5f5f5;
   cursor: not-allowed;
 }
 
