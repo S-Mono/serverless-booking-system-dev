@@ -120,7 +120,7 @@ const autoLoginWithLine = async () => {
     console.log('Getting LINE profile...')
     const profile = await liff.getProfile()
     console.log('LINE profile:', profile)
-    
+
     const lineUserId = profile.userId
     const lineName = profile.displayName
     const firebaseEmail = `line_${lineUserId}${LINE_DOMAIN}`
