@@ -207,9 +207,11 @@ const sendContactForm = async () => {
     dialog.alert('お問い合わせを送信しました。\n折り返しご連絡いたしますので、しばらくお待ちください。', '送信完了')
     contactMessage.value = ''
     isContactFormOpen.value = false
-  } catch (error) {
+  } catch (error: any) {
     console.error('お問い合わせ送信エラー:', error)
-    dialog.alert('送信に失敗しました。時間をおいて再度お試しください。', 'エラー')
+    const errorMessage = error?.message || '不明なエラー'
+    const errorCode = error?.code || ''
+    dialog.alert(`送信に失敗しました。\nエラー: ${errorCode}\n${errorMessage}\n\n時間をおいて再度お試しください。`, 'エラー')
   } finally {
     isSendingContact.value = false
   }
@@ -573,7 +575,7 @@ const formatDate = (ts: Timestamp) => {
   background: #f0f8ff;
   border: 2px solid #42b883;
   border-radius: 8px;
-  padding: 1rem;
+  padding: 0.6rem 0.3rem;
   text-align: center;
   margin-bottom: 1.5rem;
 }
@@ -586,11 +588,11 @@ const formatDate = (ts: Timestamp) => {
 
 .phone-number {
   display: inline-block;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: bold;
   color: #42b883;
   text-decoration: none;
-  padding: 0.5rem 1rem;
+  padding: 0.3rem 0.2rem;
   border-radius: 4px;
   transition: background 0.2s;
 }

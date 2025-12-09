@@ -33,6 +33,12 @@ service cloud.firestore {
       allow update: if isOwner(resource.data.customer_id);
     }
 
+    // 📧 お問い合わせデータ (contacts)
+    match /contacts/{contactId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
     // 👥 顧客データ (customers)
     match /customers/{userId} {
       allow read, write: if isAdmin();

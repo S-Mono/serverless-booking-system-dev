@@ -7,7 +7,7 @@ admin.initializeApp();
 
 // メール送信用のトランスポーター設定
 const createTransporter = () => {
-  return nodemailer.createTransport({
+  const config = {
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: parseInt(process.env.SMTP_PORT || "587"),
     secure: false, // TLS
@@ -15,7 +15,16 @@ const createTransporter = () => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+  };
+
+  logger.info("SMTP Config (password hidden)", {
+    host: config.host,
+    port: config.port,
+    user: config.auth.user,
+    hasPassword: !!config.auth.pass,
   });
+
+  return nodemailer.createTransport(config);
 };
 
 // 予約が作成されたら発火するトリガー
@@ -203,8 +212,8 @@ ${contact.message || ""}
 
 【送信日時】
 ${contact.created_at?.toDate().toLocaleString("ja-JP", {
-        timeZone: "Asia/Tokyo",
-      }) || ""}
+    timeZone: "Asia/Tokyo",
+  }) || ""}
 
 ---
 このメールは自動送信されています。
@@ -218,29 +227,55 @@ ${contact.created_at?.toDate().toLocaleString("ja-JP", {
 
       // メール送信設定
       const transporter = createTransporter();
-      const toEmail = process.env.TO_EMAIL || process.env.FROM_EMAIL || process.env.SMTP_USER || "";
+      const toEmail = process.env.TO_EMAIL ||
+        process.env.FROM_EMAIL ||
+        process.env.SMTP_USER || "";
       const mailOptions = {
         from: {
-          name: process.env.FROM_NAME || "ヘアーサロン JOY's 予約システム",
-          address: process.env.FROM_EMAIL || process.env.SMTP_USER || "",
+          name: process.env.FROM_NAME ||
+            "ヘアーサロン JOY's 予約システム",
+          address: process.env.FROM_EMAIL ||
+            process.env.SMTP_USER || "",
         },
         to: toEmail, // 環境変数で設定された宛先
         cc: contact.customer_email || undefined, // 顧客にCC
-        bcc: adminEmails.length > 0 ? adminEmails.join(",") : undefined, // 全管理者にBCC
+        bcc: adminEmails.length > 0 ?
+          adminEmails.join(",") : undefined, // 全管理者にBCC
         subject: `【お問い合わせ】${contact.customer_name || "お客様"}より`,
         text: emailBody,
       };
 
       // メール送信
-      await transporter.sendMail(mailOptions);
+      logger.info("Attempting to send email", {
+        to: toEmail,
+        hasCC: !!contact.customer_email,
+        bccCount: adminEmails.length,
+      });
+
+      const result = await transporter.sendMail(mailOptions);
 
       logger.info("Contact email sent successfully", {
         contactId: snap.id,
+        messageId: result.messageId,
+        response: result.response,
         adminCount: adminEmails.length,
         hasCustomerEmail: !!contact.customer_email,
       });
-    } catch (error) {
-      logger.error("Error sending contact email", error);
+    } catch (error: unknown) {
+      const errorObj = error as {
+        message?: string;
+        code?: string;
+        command?: string;
+        response?: string;
+        stack?: string;
+      };
+      logger.error("Error sending contact email", {
+        errorMessage: errorObj.message,
+        errorCode: errorObj.code,
+        errorCommand: errorObj.command,
+        errorResponse: errorObj.response,
+        errorStack: errorObj.stack,
+      });
       throw error;
     }
   }
