@@ -193,23 +193,26 @@ onMounted(() => {
     <div class="messages-container">
         <div class="page-header">
             <router-link to="/" class="back-btn">◀ 予約画面</router-link>
-            <h2 class="page-title">お知らせ</h2>
-
-            <div class="header-actions">
+            <div class="title-row">
+                <h2 class="page-title">お知らせ</h2>
                 <button @click="showArchived = !showArchived" class="toggle-btn" :class="{ 'active': showArchived }">
                     {{ showArchived ? '📋 現在のみ' : '📂 履歴も表示' }}
                     <span v-if="!showArchived && archivedCount > 0" class="badge">{{ archivedCount }}</span>
                 </button>
-
-                <button v-if="activeCount > 1 && !showArchived" @click="deleteOldMessages" class="cleanup-btn">
-                    🧹 整理
-                </button>
-
-                <button v-if="showArchived && archivedCount > 0" @click="permanentlyDeleteArchived"
-                    class="delete-archived-btn">
-                    🗑️ 履歴削除
-                </button>
             </div>
+        </div>
+
+        <p v-if="showArchived" class="archive-notice">※ 履歴は1年以上経過後、自動的に削除します。</p>
+
+        <div class="action-buttons">
+            <button v-if="activeCount > 1 && !showArchived" @click="deleteOldMessages" class="cleanup-btn">
+                🧹 整理
+            </button>
+
+            <button v-if="showArchived && archivedCount > 0" @click="permanentlyDeleteArchived"
+                class="delete-archived-btn">
+                🗑️ 履歴削除
+            </button>
         </div>
 
         <div v-if="loading" class="loading">読み込み中...</div>
@@ -259,24 +262,39 @@ onMounted(() => {
 /* ページヘッダー：固定表示エリア */
 .page-header {
     flex-shrink: 0;
-    /* 縮まないようにする */
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1.5rem 1rem;
-    border-bottom: 1px solid #eee;
+    padding: 1.5rem 1rem 0.5rem;
     background-color: #fff;
-    /* スクロール時に透けないように */
     z-index: 10;
     flex-wrap: wrap;
 }
 
-.header-actions {
+.title-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    gap: 1rem;
+}
+
+.archive-notice {
+    padding: 0.5rem 1rem;
+    margin: 0;
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    color: #856404;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.action-buttons {
+    display: flex;
     gap: 0.5rem;
-    margin-left: auto;
-    flex-wrap: wrap;
+    padding: 0 1rem 1rem;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
 }
 
 .toggle-btn {

@@ -31,12 +31,13 @@ const isLineApp = ref(false)
 const PSEUDO_DOMAIN = '@local.booking-system'
 const LINE_DOMAIN = '@line.booking-system'
 
-const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string) => {
+const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string, nameKanji?: string) => {
   try {
     const docRef = doc(db, 'customers', user.uid)
     const docSnap = await getDoc(docRef)
     if (!docSnap.exists()) {
       await setDoc(docRef, {
+        name_kanji: nameKanji || '',
         name_kana: name || user.displayName || 'ゲスト',
         phone_number: provider === 'phone' ? user.email?.split('@')[0] : '',
         email: user.email || '',
@@ -147,7 +148,7 @@ const autoLoginWithLine = async () => {
     }
 
     console.log('Creating customer data...')
-    await createCustomerData(user, 'line', lineName)
+    await createCustomerData(user, 'line', lineName, lineName)
 
     // 成功時はオーバーレイをクリアしてから遷移
     console.log('Login successful, redirecting to /')

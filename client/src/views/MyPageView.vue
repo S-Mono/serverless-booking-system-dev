@@ -188,7 +188,7 @@ const formatDate = (ts: Timestamp) => {
               {{ isProfileOpen ? '▲ 閉じる' : '▼ 開く' }}
             </button>
           </div>
-          
+
           <div v-show="isProfileOpen" class="profile-form">
             <div class="form-group">
               <label>お名前（漢字）</label>
@@ -331,6 +331,7 @@ const formatDate = (ts: Timestamp) => {
     opacity: 0;
     max-height: 0;
   }
+
   to {
     opacity: 1;
     max-height: 1000px;
