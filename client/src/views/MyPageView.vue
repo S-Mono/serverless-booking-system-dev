@@ -174,97 +174,99 @@ const formatDate = (ts: Timestamp) => {
 
 <template>
   <div class="mypage-container">
-    <div class="page-header">
-      <router-link to="/" class="back-btn">◀ 予約画面に戻る</router-link>
-      <h2 class="page-title">マイページ</h2>
-    </div>
+    <div class="scroll-content">
+      <div class="page-header">
+        <router-link to="/" class="back-btn">◀ 予約画面に戻る</router-link>
+        <h2 class="page-title">マイページ</h2>
+      </div>
 
-    <div class="content-grid">
-      <aside class="profile-column">
-        <div class="card profile-card">
-          <div class="profile-header">
-            <h3>お客様情報</h3>
-            <button @click="isProfileOpen = !isProfileOpen" class="toggle-btn">
-              {{ isProfileOpen ? '▲ 閉じる' : '▼ 開く' }}
-            </button>
-          </div>
-
-          <div v-show="isProfileOpen" class="profile-form">
-            <div class="form-group">
-              <label>お名前（漢字）</label>
-              <div class="input-row">
-                <input type="text" v-model="nameKanji" placeholder="例: 山田 太郎" />
-              </div>
+      <div class="content-grid">
+        <aside class="profile-column">
+          <div class="card profile-card">
+            <div class="profile-header">
+              <h3>お客様情報</h3>
+              <button @click="isProfileOpen = !isProfileOpen" class="toggle-btn">
+                {{ isProfileOpen ? '▲ 閉じる' : '▼ 開く' }}
+              </button>
             </div>
 
-            <div class="form-group">
-              <label>お名前（カナ）<span class="required">*</span></label>
-              <div class="input-row">
-                <input type="text" v-model="nameKana" placeholder="例: ヤマダ タロウ" />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>電話番号<span class="required">*</span></label>
-              <div class="input-row">
-                <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
-              </div>
-              <p class="hint">※ 予約時に必要となります。</p>
-            </div>
-
-            <div class="form-group">
-              <label>よく利用するメニュー</label>
-              <div class="radio-group">
-                <label class="radio-item">
-                  <input type="radio" value="barber" v-model="preferredCategory"> 💈 理容
-                </label>
-                <label class="radio-item">
-                  <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
-                </label>
-                <label class="radio-item">
-                  <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
-                </label>
-              </div>
-              <p class="hint">※ 予約画面の初期表示に反映されます。</p>
-            </div>
-
-            <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
-              {{ isSavingProfile ? '保存中...' : '保存する' }}
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <main class="reservation-column">
-        <div class="card reservation-container">
-          <h3>予約状況</h3>
-          <p v-if="loading" class="loading">読み込み中...</p>
-          <div v-else>
-            <div v-if="reservations.length === 0" class="no-data">
-              <p>現在、予約はありません。</p>
-              <router-link to="/" class="book-link">予約を入れる</router-link>
-            </div>
-            <ul v-else class="reservation-list">
-              <li v-for="res in reservations" :key="res.id" class="reservation-item">
-                <div class="res-header">
-                  <span class="date">{{ formatDate(res.start_at) }}</span>
-                  <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
-                  <span v-else-if="res.status === 'pending'" class="status-badge pending">お店の確認待ち</span>
+            <div v-show="isProfileOpen" class="profile-form">
+              <div class="form-group">
+                <label>お名前（漢字）</label>
+                <div class="input-row">
+                  <input type="text" v-model="nameKanji" placeholder="例: 山田 太郎" />
                 </div>
-                <div class="res-body">
-                  <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
-                    <span class="menu-title">{{ item.title }}</span>
-                    <span v-if="item.price" class="menu-price">¥{{ item.price.toLocaleString() }}</span>
+              </div>
+
+              <div class="form-group">
+                <label>お名前（カナ）<span class="required">*</span></label>
+                <div class="input-row">
+                  <input type="text" v-model="nameKana" placeholder="例: ヤマダ タロウ" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>電話番号<span class="required">*</span></label>
+                <div class="input-row">
+                  <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
+                </div>
+                <p class="hint">※ 予約時に必要となります。</p>
+              </div>
+
+              <div class="form-group">
+                <label>よく利用するメニュー</label>
+                <div class="radio-group">
+                  <label class="radio-item">
+                    <input type="radio" value="barber" v-model="preferredCategory"> 💈 理容
+                  </label>
+                  <label class="radio-item">
+                    <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
+                  </label>
+                  <label class="radio-item">
+                    <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
+                  </label>
+                </div>
+                <p class="hint">※ 予約画面の初期表示に反映されます。</p>
+              </div>
+
+              <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
+                {{ isSavingProfile ? '保存中...' : '保存する' }}
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <main class="reservation-column">
+          <div class="card reservation-container">
+            <h3>予約状況</h3>
+            <p v-if="loading" class="loading">読み込み中...</p>
+            <div v-else>
+              <div v-if="reservations.length === 0" class="no-data">
+                <p>現在、予約はありません。</p>
+                <router-link to="/" class="book-link">予約を入れる</router-link>
+              </div>
+              <ul v-else class="reservation-list">
+                <li v-for="res in reservations" :key="res.id" class="reservation-item">
+                  <div class="res-header">
+                    <span class="date">{{ formatDate(res.start_at) }}</span>
+                    <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
+                    <span v-else-if="res.status === 'pending'" class="status-badge pending">お店の確認待ち</span>
                   </div>
-                </div>
-                <div class="res-footer">
-                  <button class="cancel-btn" @click="cancelReservation(res.id)">キャンセル</button>
-                </div>
-              </li>
-            </ul>
+                  <div class="res-body">
+                    <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
+                      <span class="menu-title">{{ item.title }}</span>
+                      <span v-if="item.price" class="menu-price">¥{{ item.price.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                  <div class="res-footer">
+                    <button class="cancel-btn" @click="cancelReservation(res.id)">キャンセル</button>
+                  </div>
+                </li>
+              </ul>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   </div>
 </template>
@@ -273,11 +275,33 @@ const formatDate = (ts: Timestamp) => {
 .mypage-container {
   max-width: 1024px;
   margin: 0 auto;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.scroll-content {
+  flex: 1;
+  overflow-y: auto;
   padding: 2rem 1rem;
-  min-height: 100vh;
-  height: auto;
-  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.scroll-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-content::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .page-header {
