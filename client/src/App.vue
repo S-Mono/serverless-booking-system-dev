@@ -144,11 +144,26 @@ const goToMessages = () => {
 </template>
 
 <style scoped>
-/* ... (既存CSS) ... */
+/* LINEミニアプリ セーフエリア対応 */
 .app-layout {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* ノーマルモード: 下に34px */
+  padding-bottom: 34px;
+  padding-bottom: env(safe-area-inset-bottom, 34px);
+}
+
+/* ランドスケープモード: 左右に44px、下に21px */
+@media (orientation: landscape) {
+  .app-layout {
+    padding-left: 44px;
+    padding-right: 44px;
+    padding-bottom: 21px;
+    padding-left: env(safe-area-inset-left, 44px);
+    padding-right: env(safe-area-inset-right, 44px);
+    padding-bottom: env(safe-area-inset-bottom, 21px);
+  }
 }
 
 header {

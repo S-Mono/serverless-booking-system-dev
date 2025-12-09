@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router'
 <template>
     <footer class="app-footer">
         <div class="footer-content">
-            <p class="footer-copyright">&copy; 2025 ヘアーサロン Joy's 予約システム</p>
+            <p class="footer-copyright">&copy; 2025 ヘアーサロン JOY's 予約システム</p>
             <div class="footer-links">
                 <RouterLink to="/terms" class="footer-link">利用規約</RouterLink>
                 <span class="footer-divider">|</span>
