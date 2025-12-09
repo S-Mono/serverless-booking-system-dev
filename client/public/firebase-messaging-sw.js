@@ -24,7 +24,8 @@ messaging.onBackgroundMessage(function(payload) {
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/favicon.ico', // アプリアイコンがあれば指定
+    // icon: '/favicon.ico', // アプリアイコンがあれば指定
+    icon: '/favicon.png', // アプリアイコンがあれば指定
     tag: 'reservation-alert'
   };
 
