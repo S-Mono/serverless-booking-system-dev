@@ -181,13 +181,38 @@ const goBack = () => {
 .privacy-container {
     max-width: 800px;
     margin: 0 auto;
-    padding: 2rem 1rem;
-    min-height: 100vh;
+    height: calc(100vh - 60px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.privacy-content {
+    flex: 1;
     overflow-y: auto;
+    padding: 0 1rem 2rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.privacy-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.privacy-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.privacy-content::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
 }
 
 .privacy-header {
-    margin-bottom: 2rem;
+    flex-shrink: 0;
+    padding: 1.5rem 1rem 1rem;
+    margin-bottom: 0;
     position: relative;
 }
 
