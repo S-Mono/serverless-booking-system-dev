@@ -24,6 +24,7 @@ const nameKana = ref('') // 読み仮名（カナ）
 const phoneNumber = ref('') // 電話番号
 const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
+const isProfileOpen = ref(false) // お客様情報の開閉状態
 
 const fetchReservations = async (userId: string) => {
   loading.value = true
@@ -43,6 +44,8 @@ const fetchReservations = async (userId: string) => {
       nameKana.value = data.name_kana || ''
       phoneNumber.value = data.phone_number || ''
       preferredCategory.value = data.preferred_category || 'barber'
+      // 未入力なら開く、入力済みなら閉じる
+      isProfileOpen.value = !nameKana.value || !phoneNumber.value
     } else {
       // なければ電話番号で名寄せトライ
       const phone = currentUser.value.email?.split('@')[0]
@@ -55,6 +58,8 @@ const fetchReservations = async (userId: string) => {
           nameKana.value = data.name_kana || ''
           phoneNumber.value = data.phone_number || ''
           preferredCategory.value = data.preferred_category || 'barber'
+          // 未入力なら開く、入力済みなら閉じる
+          isProfileOpen.value = !nameKana.value || !phoneNumber.value
         }
       }
     }
@@ -177,48 +182,56 @@ const formatDate = (ts: Timestamp) => {
     <div class="content-grid">
       <aside class="profile-column">
         <div class="card profile-card">
-          <h3>お客様情報</h3>
-          <div class="form-group">
-            <label>お名前（漢字）</label>
-            <div class="input-row">
-              <input type="text" v-model="nameKanji" placeholder="例: 山田 太郎" />
-            </div>
+          <div class="profile-header">
+            <h3>お客様情報</h3>
+            <button @click="isProfileOpen = !isProfileOpen" class="toggle-btn">
+              {{ isProfileOpen ? '▲ 閉じる' : '▼ 開く' }}
+            </button>
           </div>
-
-          <div class="form-group">
-            <label>お名前（カナ）<span class="required">*</span></label>
-            <div class="input-row">
-              <input type="text" v-model="nameKana" placeholder="例: ヤマダ タロウ" />
+          
+          <div v-show="isProfileOpen" class="profile-form">
+            <div class="form-group">
+              <label>お名前（漢字）</label>
+              <div class="input-row">
+                <input type="text" v-model="nameKanji" placeholder="例: 山田 太郎" />
+              </div>
             </div>
-          </div>
 
-          <div class="form-group">
-            <label>電話番号<span class="required">*</span></label>
-            <div class="input-row">
-              <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
+            <div class="form-group">
+              <label>お名前（カナ）<span class="required">*</span></label>
+              <div class="input-row">
+                <input type="text" v-model="nameKana" placeholder="例: ヤマダ タロウ" />
+              </div>
             </div>
-            <p class="hint">※ 予約時に必要となります。</p>
-          </div>
 
-          <div class="form-group">
-            <label>よく利用するメニュー</label>
-            <div class="radio-group">
-              <label class="radio-item">
-                <input type="radio" value="barber" v-model="preferredCategory"> 💈 理容
-              </label>
-              <label class="radio-item">
-                <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
-              </label>
-              <label class="radio-item">
-                <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
-              </label>
+            <div class="form-group">
+              <label>電話番号<span class="required">*</span></label>
+              <div class="input-row">
+                <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
+              </div>
+              <p class="hint">※ 予約時に必要となります。</p>
             </div>
-            <p class="hint">※ 予約画面の初期表示に反映されます。</p>
-          </div>
 
-          <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
-            {{ isSavingProfile ? '保存中...' : '保存する' }}
-          </button>
+            <div class="form-group">
+              <label>よく利用するメニュー</label>
+              <div class="radio-group">
+                <label class="radio-item">
+                  <input type="radio" value="barber" v-model="preferredCategory"> 💈 理容
+                </label>
+                <label class="radio-item">
+                  <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
+                </label>
+                <label class="radio-item">
+                  <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
+                </label>
+              </div>
+              <p class="hint">※ 予約画面の初期表示に反映されます。</p>
+            </div>
+
+            <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
+              {{ isSavingProfile ? '保存中...' : '保存する' }}
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -262,7 +275,9 @@ const formatDate = (ts: Timestamp) => {
   margin: 0 auto;
   padding: 2rem 1rem;
   min-height: 100vh;
-  overflow-y: auto;
+  height: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page-header {
@@ -279,6 +294,47 @@ const formatDate = (ts: Timestamp) => {
   color: #333;
   margin: 0;
   border-bottom: none;
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.profile-header h3 {
+  margin: 0;
+}
+
+.toggle-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.toggle-btn:hover {
+  background: #2980b9;
+}
+
+.profile-form {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+  }
 }
 
 .back-btn {
