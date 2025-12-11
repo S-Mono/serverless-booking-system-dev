@@ -453,6 +453,25 @@ const turnOffNotification = async () => {
   }
 }
 
+// 電話番号フォーマット（ハイフン自動補完）
+const formatPhoneNumber = (value: string) => {
+  const numbers = value.replace(/[^0-9]/g, '')
+  if (numbers.length <= 3) {
+    return numbers
+  } else if (numbers.length <= 7) {
+    return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  } else if (numbers.length <= 11) {
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  } else {
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  }
+}
+
+const handlePhoneInput = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  newReservation.value.customer_phone = formatPhoneNumber(input.value)
+}
+
 const submitReservation = async () => {
   // バリデーションエラーをリセット
   validationErrors.value = {
@@ -1204,8 +1223,8 @@ const exportReservationsToExcel = async () => {
         </div>
         <div class="form-group">
           <label>電話番号 <span style="color: #e74c3c;">*</span></label>
-          <input type="tel" v-model="newReservation.customer_phone"
-            :class="{ 'input-error': validationErrors.customer_phone }" placeholder="09012345678">
+          <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
+            :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
             }}</span>
         </div>

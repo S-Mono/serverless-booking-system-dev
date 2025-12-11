@@ -30,6 +30,40 @@ const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
 const isProfileOpen = ref(false) // お客様情報の開閉状態
 
+// 電話番号フォーマット（ハイフン自動補完）
+const formatPhoneNumber = (value: string) => {
+  // 数字のみ抽出
+  const numbers = value.replace(/[^0-9]/g, '')
+  
+  // 桁数に応じてフォーマット
+  if (numbers.length <= 3) {
+    return numbers
+  } else if (numbers.length <= 7) {
+    return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  } else if (numbers.length <= 11) {
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  } else {
+    // 11桁を超える場合は11桁まで
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  }
+}
+
+const handlePhoneInput = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const cursorPos = input.selectionStart || 0
+  const oldValue = phoneNumber.value
+  const newValue = formatPhoneNumber(input.value)
+  
+  phoneNumber.value = newValue
+  
+  // カーソル位置を調整
+  if (newValue.length > oldValue.length && (newValue[cursorPos] === '-' || newValue[cursorPos - 1] === '-')) {
+    setTimeout(() => {
+      input.setSelectionRange(cursorPos + 1, cursorPos + 1)
+    }, 0)
+  }
+}
+
 // お問い合わせフォーム
 const isContactFormOpen = ref(false)
 const contactMessage = ref('')
@@ -311,7 +345,7 @@ const deleteAccount = async () => {
               <div class="form-group">
                 <label>電話番号<span class="required">*</span></label>
                 <div class="input-row">
-                  <input type="tel" v-model="phoneNumber" placeholder="例: 090-1234-5678" />
+                  <input type="tel" v-model="phoneNumber" @input="handlePhoneInput" placeholder="例: 090-1234-5678" />
                 </div>
                 <p class="hint">※ 予約時に必要となります。</p>
               </div>
