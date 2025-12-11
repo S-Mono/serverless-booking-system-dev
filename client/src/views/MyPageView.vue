@@ -98,12 +98,12 @@ const fetchReservations = async (userId: string) => {
     const q = query(
       collection(db, 'reservations'),
       where('customer_id', '==', userId),
-      where('start_at', '>=', Timestamp.fromDate(today)),
-      orderBy('start_at', 'asc')
+      where('start_at', '>=', Timestamp.fromDate(today))
     )
     const querySnapshot = await getDocs(q)
     const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
-    reservations.value = results
+    // JavaScript側でソート
+    reservations.value = results.sort((a, b) => a.start_at.seconds - b.start_at.seconds)
 
     // プロフィール取得 (UID優先)
     const docRef = doc(db, 'customers', userId)
