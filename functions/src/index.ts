@@ -359,39 +359,32 @@ export const deleteUserAccount = onCall(
         // LINE連携解除に失敗してもアカウント削除は続行
       }
 
-      // 2. 予約データをキャンセル扱いに更新
+      // 2. 予約データを物理削除
       const reservationsSnapshot = await db
         .collection("reservations")
         .where("customer_id", "==", userId)
         .get();
 
       reservationsSnapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, {
-          status: "cancelled",
-          cancelled_at: admin.firestore.FieldValue.serverTimestamp(),
-          cancel_reason: "ユーザー退会のため自動キャンセル",
-        });
+        batch.delete(doc.ref);
       });
 
-      logger.info("Reservations cancelled", {
+      logger.info("Reservations deleted", {
         userId,
         count: reservationsSnapshot.size,
       });
 
-      // 3. メッセージをキャンセル扱いに更新
+      // 3. メッセージを物理削除
       const messagesSnapshot = await db
         .collection("messages")
         .where("customer_id", "==", userId)
         .get();
 
       messagesSnapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, {
-          is_cancelled: true,
-          title: "【退会済】" + doc.data().title,
-        });
+        batch.delete(doc.ref);
       });
 
-      logger.info("Messages marked as cancelled", {
+      logger.info("Messages deleted", {
         userId,
         count: messagesSnapshot.size,
       });

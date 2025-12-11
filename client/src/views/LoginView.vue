@@ -86,13 +86,21 @@ onMounted(async () => {
         isLineApp.value = true
         console.log('Running in LINE app')
 
-        // ミニアプリは自動ログイン状態のため、すぐに認証処理
-        if (liff.isLoggedIn()) {
-          console.log('Already logged in, attempting auto-login...')
-          // 自動ログイン処理を実行
-          await autoLoginWithLine()
+        // ログアウト直後かチェック（5秒以内なら自動ログインをスキップ）
+        const logoutFlag = localStorage.getItem('logout_flag')
+        const now = Date.now()
+        if (logoutFlag && now - parseInt(logoutFlag) < 5000) {
+          console.log('Recently logged out, skipping auto-login')
+          localStorage.removeItem('logout_flag')
         } else {
-          console.warn('Not logged in in LINE app - this should not happen in Mini App')
+          // ミニアプリは自動ログイン状態のため、すぐに認証処理
+          if (liff.isLoggedIn()) {
+            console.log('Already logged in, attempting auto-login...')
+            // 自動ログイン処理を実行
+            await autoLoginWithLine()
+          } else {
+            console.warn('Not logged in in LINE app - this should not happen in Mini App')
+          }
         }
       } else {
         console.log('Not running in LINE app (browser or other)')

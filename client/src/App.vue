@@ -85,10 +85,12 @@ const closeMenu = () => isMenuOpen.value = false
 
 const handleLogout = async () => {
   try {
+    // ログアウトフラグを設定（5秒間自動ログインをスキップ）
+    localStorage.setItem('logout_flag', Date.now().toString())
     await signOut(auth)
     closeMenu()
     userStore.setCustomerName('')
-    router.push('/login')
+    router.push('/')
   } catch (error) { console.error(error) }
 }
 

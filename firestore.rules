@@ -30,7 +30,7 @@ service cloud.firestore {
       allow read, write: if isAdmin();
       allow read: if isOwner(resource.data.customer_id);
       allow create: if isOwner(request.resource.data.customer_id);
-      allow update: if isOwner(resource.data.customer_id);
+      allow update, delete: if isOwner(resource.data.customer_id);
     }
 
     // 📧 お問い合わせデータ (contacts)
