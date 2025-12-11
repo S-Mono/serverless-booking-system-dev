@@ -285,7 +285,7 @@ const submitReservation = async () => {
   const menuList = selectedMenus.value.map(m => `  ${m.title} (${m.duration_min}分) - ¥${m.price_with_tax.toLocaleString()}`).join('\n')
   const confirmMessage = `この内容で予約を確定します。\nよろしいでしょうか？\n\n【予約内容】\n日時: ${dateStr}\n担当: ${staffName}\nメニュー:\n${menuList}\n\n合計: ¥${totalAmount.value.toLocaleString()} (${totalDuration.value}分)`
 
-  const confirmed = await dialog.confirm(confirmMessage, '予約確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
+  const confirmed = await dialog.open(confirmMessage, { title: '予約確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!confirmed) return
 
   processing.value = true

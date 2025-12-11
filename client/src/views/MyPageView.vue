@@ -197,7 +197,7 @@ const saveProfile = async () => {
 }
 
 const cancelReservation = async (id: string) => {
-  const ok = await dialog.confirm('キャンセルしますか?', '確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
+  const ok = await dialog.open('キャンセルしますか?', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
   try {
     // 1. 予約自体の削除 (既存処理)
