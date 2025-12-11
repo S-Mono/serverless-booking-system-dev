@@ -21,7 +21,7 @@ interface Staff { id: string; name: string; color?: string }
 interface Reservation {
   id: string; start_at: Timestamp; end_at: Timestamp; staff_id: string
   customer_id?: string; // 👈 追加
-  customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number }[]; status: string; source?: 'web' | 'phone'; note?: string
+  customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
 }
 interface Menu { id: string; title: string; duration_min: number; price: number }
 interface ShopConfig { holiday_weekdays: number[]; closed_dates: string[]; business_hours: { start: string; end: string }; tax_rate: number }
@@ -594,10 +594,12 @@ const approveReservation = async (res: Reservation) => {
     weekday: 'short'
   })
   const staffName = getStaffName(res.staff_id)
-  const menuList = res.menu_items.map(m => `  ${m.title} (${m.duration}分) - ¥${m.price.toLocaleString()}`).join('\n')
-  const confirmMessage = `この内容で予約を確定します。\nよろしいでしょうか？\n\n【予約内容】\n日時: ${dateStr}\nお客様: ${res.customer_name}\n担当: ${staffName}\nメニュー:\n${menuList}\n\n合計: ¥${res.total_price.toLocaleString()} (${res.total_duration_min}分)`
+  const menuList = res.menu_items.map(m => `  ${m.title} (${m.duration}分)${m.price ? ` - ¥${m.price.toLocaleString()}` : ''}`).join('\n')
+  const totalPrice = res.total_price ? `¥${res.total_price.toLocaleString()}` : '未設定'
+  const totalDuration = res.total_duration_min ? `${res.total_duration_min}分` : '未設定'
+  const confirmMessage = `この内容で予約を確定します。\nよろしいでしょうか？\n\n【予約内容】\n日時: ${dateStr}\nお客様: ${res.customer_name}\n担当: ${staffName}\nメニュー:\n${menuList}\n\n合計: ${totalPrice} (${totalDuration})`
 
-  const confirmed = await dialog.confirm(confirmMessage, '予約確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
+  const confirmed = await dialog.open(confirmMessage, { title: '予約確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!confirmed) return
 
   try {
@@ -1265,7 +1267,7 @@ const exportReservationsToExcel = async () => {
           <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
             :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-          }}</span>
+            }}</span>
         </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>

@@ -459,7 +459,7 @@ const exportToExcel = () => {
                         <div class="summary-diff"
                             :class="{ 'positive': currentTotal > pastTotal, 'negative': currentTotal < pastTotal }">
                             {{ currentTotal > pastTotal ? '+' : '' }}{{ ((currentTotal - pastTotal) / (pastTotal || 1) *
-                                100).toFixed(1) }}%
+                            100).toFixed(1) }}%
                         </div>
                     </div>
                     <div class="summary-card past">

@@ -203,24 +203,24 @@ const saveProfile = async () => {
 }
 
 const cancelReservation = async (id: string) => {
-  const ok = await dialog.open('キャンセルしますか?', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
+  const ok = await dialog.open('キャンセルしますか？', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
-
+  
   isCancellingReservation.value = true
   console.log('[MyPage] Cancelling reservation:', id)
   console.log('[MyPage] Current user UID:', currentUser.value?.uid)
-
+  
   try {
     // 予約データを取得して確認
     const resDoc = await getDoc(doc(db, 'reservations', id))
     if (!resDoc.exists()) {
       throw new Error('予約が見つかりません')
     }
-
+    
     const resData = resDoc.data()
     console.log('[MyPage] Reservation data:', resData)
     console.log('[MyPage] Reservation customer_id:', resData.customer_id)
-
+    
     // 1. 予約自体の削除 (既存処理)
     await deleteDoc(doc(db, 'reservations', id))
     console.log('[MyPage] Reservation deleted successfully')
@@ -230,7 +230,7 @@ const cancelReservation = async (id: string) => {
     const msgSnap = await getDocs(msgQ)
 
     // 関連するメッセージがあれば全て更新
-    const updatePromises = msgSnap.docs.map(d =>
+    const updatePromises = msgSnap.docs.map(d => 
       updateDoc(d.ref, {
         is_cancelled: true, // キャンセル済みフラグ
         title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
@@ -365,6 +365,7 @@ const deleteAccount = async () => {
     isDeletingAccount.value = false
   }
 }
+
 </script>
 
 <template>
@@ -431,37 +432,46 @@ const deleteAccount = async () => {
           </div>
 
           <!-- 予約状況 -->
-          <div class="card reservation-container">
+          <div class="card reservations-card">
             <h3>予約状況</h3>
-            <p v-if="loading" class="loading">読み込み中...</p>
-            <div v-else>
-              <div v-if="reservations.length === 0" class="no-data">
-                <p>現在、予約はありません。</p>
-                <router-link to="/" class="book-link">予約を入れる</router-link>
-              </div>
-              <ul v-else class="reservation-list">
-                <li v-for="res in reservations" :key="res.id" class="reservation-item">
-                  <div class="res-header">
-                    <span class="date">{{ formatDate(res.start_at) }}</span>
-                    <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
-                    <span v-else-if="res.status === 'pending'" class="status-badge pending">仮予約</span>
-                    <span v-else class="status-badge cancelled">キャンセル済</span>
-                  </div>
-                  <div class="res-body">
-                    <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
-                      <span class="menu-title">{{ item.title }}</span>
-                      <span v-if="item.price" class="menu-price">¥{{ item.price.toLocaleString() }}</span>
-                    </div>
-                  </div>
-                  <div class="reservation-actions">
-                    <button v-if="res.status === 'confirmed' || res.status === 'pending'" class="cancel-btn"
-                      @click="cancelReservation(res.id)" :disabled="isCancellingReservation">
-                      {{ isCancellingReservation ? '処理中...' : 'キャンセル' }}
-                    </button>
-                  </div>
-                </li>
-              </ul>
+            <div v-if="loading" class="loading-state">
+              <p>読み込み中...</p>
             </div>
+            <div v-else-if="reservations.length === 0" class="empty-state">
+              <p>予約がありません</p>
+              <router-link to="/" class="book-now-btn">今すぐ予約する</router-link>
+            </div>
+            <ul v-else class="reservation-list">
+              <li v-for="reservation in reservations" :key="reservation.id" class="reservation-item"
+                :class="{ cancelled: reservation.status === 'cancelled' }">
+                <div class="res-header">
+                  <span class="date">
+                    {{ new Date(reservation.start_at.seconds * 1000).toLocaleString('ja-JP', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    }) }}
+                  </span>
+                  <span class="status-badge" :class="reservation.status">
+                    {{ reservation.status === 'confirmed' ? '予約済' :
+                      reservation.status === 'pending' ? '仮予約' : 'キャンセル済' }}
+                  </span>
+                </div>
+                <ul class="menu-list">
+                  <li v-for="(item, index) in reservation.menu_items" :key="index">
+                    {{ item.title }} - ¥{{ item.price.toLocaleString() }}
+                  </li>
+                </ul>
+                <div class="reservation-actions">
+                  <button v-if="reservation.status === 'confirmed' || reservation.status === 'pending'" @click="cancelReservation(reservation.id)"
+                    class="cancel-btn" :disabled="isCancellingReservation">
+                    {{ isCancellingReservation ? '処理中...' : 'キャンセル' }}
+                  </button>
+                </div>
+              </li>
+            </ul>
           </div>
 
           <!-- お問い合わせフォーム -->
@@ -497,14 +507,15 @@ const deleteAccount = async () => {
             </div>
           </div>
 
-          <!-- 退会セクション -->
+          <!-- 退会セクション（トグル形式） -->
           <div class="card danger-card">
             <div class="profile-header">
               <h3>アカウントの削除</h3>
               <button @click="isDeleteAccountOpen = !isDeleteAccountOpen" class="toggle-btn danger-toggle">
-                {{ isDeleteAccountOpen ? '閉じる' : '開く' }}
+                {{ isDeleteAccountOpen ? '▲ 閉じる' : '▼ 開く' }}
               </button>
             </div>
+
             <div v-show="isDeleteAccountOpen" class="danger-zone">
               <p class="danger-note">
                 退会すると、以下の処理が実行されます：
@@ -744,7 +755,7 @@ const deleteAccount = async () => {
 }
 
 /* 予約状況 */
-.reservation-container {
+.reservations-card {
   margin-top: 1.5rem;
 }
 

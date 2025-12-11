@@ -107,26 +107,26 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
 </script>
 
 <template>
-  <!-- ローディング画面 -->
-  <div v-if="lineAuthStore.isInitializing" class="loading-screen">
-    <div class="loading-content">
-      <img src="/LINE_spinner_dark.svg" alt="読み込み中" class="spinner" />
-      <p class="loading-text">初期化中...</p>
-      <p v-if="lineAuthStore.error" class="error-text">{{ lineAuthStore.error }}</p>
-      <!-- デバッグ情報 -->
-      <div class="debug-info">
-        <p style="font-size: 12px; color: #fff; margin-top: 20px; text-align: center; line-height: 1.6;">
-          URL: {{ currentUrl }}<br>
-          LIFF ID: {{ liffId }}<br>
-          UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}<br>
-          Mode: {{ envMode }}
-        </p>
-        <!-- スキップボタン -->
-        <button @click="lineAuthStore.isInitializing = false" class="skip-btn"
-          style="margin-top: 20px; padding: 10px 20px; background: rgba(255,255,255,0.3); border: 1px solid white; color: white; border-radius: 4px; cursor: pointer;">
-          スキップして続行
-        </button>
-      </div>
+  <!-- LINE初期化中のローディング画面 -->
+  <div v-if="lineAuthStore.isInitializing" class="app-loading">
+    <img src="/LINE_spinner_dark.svg" alt="読み込み中" class="loading-spinner" />
+    <p class="loading-text">読み込み中...</p>
+    <p v-if="lineAuthStore.error" class="error-text">
+      {{ lineAuthStore.error }}
+    </p>
+    <!-- デバッグ情報 -->
+    <div class="debug-info">
+      <p style="font-size: 12px; color: #fff; margin-top: 20px; text-align: center; line-height: 1.6;">
+        URL: {{ currentUrl }}<br>
+        LIFF ID: {{ liffId }}<br>
+        UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}<br>
+        Mode: {{ envMode }}
+      </p>
+      <!-- スキップボタン（5秒後に表示） -->
+      <button @click="lineAuthStore.isInitializing = false" class="skip-btn"
+        style="margin-top: 20px; padding: 10px 20px; background: rgba(255,255,255,0.3); border: 1px solid white; color: white; border-radius: 4px; cursor: pointer;">
+        スキップして続行
+      </button>
     </div>
   </div>
 
@@ -177,44 +177,37 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
 
 <style scoped>
 /* ローディング画面 */
-.loading-screen {
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.app-loading {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  z-index: 9999;
-}
-
-.loading-content {
-  text-align: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
 }
 
-.spinner {
+.loading-spinner {
   width: 80px;
   height: 80px;
-  margin: 0 auto 20px;
   /* LINE公式SVGスピナーはアニメーション内蔵 */
 }
 
 .loading-text {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
+  margin-top: 1.5rem;
+  font-size: 1.2rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
 }
 
 .error-text {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #ffcccc;
-  background: rgba(255, 0, 0, 0.2);
-  padding: 8px 16px;
-  border-radius: 4px;
-  max-width: 300px;
-  margin-left: auto;
-  margin-right: auto;
+  margin-top: 1rem;
+  padding: 1rem 2rem;
+  background: rgba(231, 76, 60, 0.9);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  max-width: 90%;
+  text-align: center;
 }
 
 /* LINEミニアプリ セーフエリア対応 */
