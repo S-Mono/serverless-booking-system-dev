@@ -226,6 +226,7 @@ const cancelReservation = async (id: string) => {
     console.log('[MyPage] Reservation deleted successfully')
 
     // 🟢 2. 【追加】関連するメッセージを「キャンセル扱い」に更新
+    // エラーが発生しても予約キャンセル自体は成功とする（非クリティカル処理）
     try {
       const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
       const msgSnap = await getDocs(msgQ)
@@ -235,18 +236,29 @@ const cancelReservation = async (id: string) => {
         updateDoc(d.ref, {
           is_cancelled: true, // キャンセル済みフラグ
           title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
+        }).catch((err: any) => {
+          // 個別の更新エラーを静かに処理（permission-deniedなど）
+          console.warn('[MyPage] Single message update failed:', err.code || err.message)
         })
       )
       await Promise.all(updatePromises)
       console.log('[MyPage] Messages updated successfully')
     } catch (msgError: any) {
-      // メッセージ更新に失敗しても予約キャンセルは成功とする
-      console.warn('[MyPage] Message update failed (non-critical):', msgError)
+      // クエリ自体のエラーも静かに処理（AbortErrorなど）
+      if (msgError.name !== 'AbortError') {
+        console.warn('[MyPage] Message update failed (non-critical):', msgError.code || msgError.message)
+      }
     }
 
     dialog.alert('予約をキャンセルしました')
     reservations.value = reservations.value.filter(res => res.id !== id)
   } catch (error: any) {
+    // AbortErrorはユーザーが画面を離れたことによる正常な中断なので無視
+    if (error.name === 'AbortError') {
+      console.log('[MyPage] Request aborted (user navigated away)')
+      return
+    }
+
     console.error('[MyPage] Cancel error:', error)
     const errorMsg = error?.message || error?.code || '不明なエラー'
     dialog.alert(`キャンセル失敗: ${errorMsg}`, 'エラー')
