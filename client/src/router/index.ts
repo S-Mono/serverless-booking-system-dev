@@ -26,11 +26,14 @@ const router = createRouter({
     { 
       path: '/mypage', 
       name: 'mypage',
-      component: MyPageView },
+      component: MyPageView,
+      meta: { requiresAuth: true } // 🟢 認証必須
+    },
     {
       path: '/messages',
       name: 'messages',
-      component: () => import('../views/MessagesView.vue')
+      component: () => import('../views/MessagesView.vue'),
+      meta: { requiresAuth: true } // 🟢 認証必須
     },
     {
       path: '/privacy',
@@ -45,7 +48,8 @@ const router = createRouter({
     {
       path: '/support',
       name: 'support',
-      component: () => import('../views/CustomerSupportView.vue')
+      component: () => import('../views/CustomerSupportView.vue'),
+      meta: { requiresAuth: true } // 🟢 認証必須
     },
     
     // 管理画面ルート群
@@ -106,6 +110,24 @@ router.beforeEach(async (to, from, next) => {
       console.log('[Router] Auto logout on login page navigation')
     } catch (error) {
       console.error('[Router] Auto logout failed:', error)
+    }
+  }
+
+  // 🟢 顧客用ページの認証チェック
+  if (to.meta.requiresAuth) {
+    // Firebaseの初期化完了を待つ
+    await new Promise<void>(resolve => {
+      const unsubscribe = auth.onAuthStateChanged(() => {
+        unsubscribe()
+        resolve()
+      })
+    })
+
+    const user = auth.currentUser
+    // 未ログインならログイン画面へ
+    if (!user) {
+      console.log('[Router] Redirect to login (auth required)')
+      return next('/login')
     }
   }
 
