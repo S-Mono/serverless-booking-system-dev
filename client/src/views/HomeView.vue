@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, doc, limit } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
 
 const dialog = useDialogStore()
@@ -174,8 +174,10 @@ const bookWithLastMenu = () => {
   openBookingModal()
 }
 
+let unsubscribeAuth: Unsubscribe | null = null
+
 onMounted(async () => {
-  onAuthStateChanged(auth, async (user) => {
+  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
     currentUser.value = user
     if (user) {
       await checkCustomerStatus(user)

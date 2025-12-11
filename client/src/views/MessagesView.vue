@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 // 👇 writeBatch, doc を追加インポート
 import { collection, query, where, orderBy, getDocs, Timestamp, writeBatch, doc, updateDoc } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog' // ダイアログ用
 
 const dialog = useDialogStore()
@@ -190,8 +190,10 @@ const formatDate = (ts: Timestamp) => {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+let unsubscribeAuth: Unsubscribe | null = null
+
 onMounted(() => {
-    onAuthStateChanged(auth, (user) => {
+    unsubscribeAuth = onAuthStateChanged(auth, (user) => {
         if (user) {
             currentUser.value = user
             fetchMessages(user.uid)
@@ -199,6 +201,13 @@ onMounted(() => {
             router.push('/login')
         }
     })
+})
+
+onUnmounted(() => {
+    if (unsubscribeAuth) {
+        unsubscribeAuth()
+        console.log('[MessagesView] Auth listener unsubscribed')
+    }
 })
 </script>
 

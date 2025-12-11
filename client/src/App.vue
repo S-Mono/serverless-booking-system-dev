@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router'
 import { auth, db } from './lib/firebase'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged, signOut, type Unsubscribe } from 'firebase/auth'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { useUserStore } from './stores/user'
 import { useLineAuthStore } from './stores/lineAuth'
@@ -63,11 +63,13 @@ const subscribeUnread = (userId: string) => {
   })
 }
 
+let unsubscribeAuth: Unsubscribe | null = null
+let unsubscribeMessages: (() => void) | null = null
+
 onMounted(async () => {
   await lineAuthStore.init()
-  let unsubscribeMessages: (() => void) | null = null
 
-  onAuthStateChanged(auth, async (user) => {
+  unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
     if (user) {
       userStore.setUser(user)
       await fetchCustomerName(user)
@@ -78,6 +80,16 @@ onMounted(async () => {
       if (unsubscribeMessages) unsubscribeMessages() // 監視解除
     }
   })
+})
+
+onUnmounted(() => {
+  if (unsubscribeAuth) {
+    unsubscribeAuth()
+    console.log('[App] Auth listener unsubscribed')
+  }
+  if (unsubscribeMessages) {
+    unsubscribeMessages()
+  }
 })
 
 const toggleMenu = () => isMenuOpen.value = !isMenuOpen.value

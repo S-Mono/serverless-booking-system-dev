@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import * as XLSX from 'xlsx'
 
 interface Reservation {
@@ -182,8 +182,10 @@ watch([currentStartDate, currentEndDate], () => {
 })
 
 // 初期化
+let unsubscribeAuth: Unsubscribe | null = null
+
 onMounted(() => {
-    onAuthStateChanged(auth, async (user) => {
+    unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (user) {
             currentUser.value = user
             // データ取得
@@ -192,6 +194,13 @@ onMounted(() => {
             router.push('/admin-login')
         }
     })
+})
+
+onUnmounted(() => {
+    if (unsubscribeAuth) {
+        unsubscribeAuth()
+        console.log('[AdminSalesView] Auth listener unsubscribed')
+    }
 })
 
 // 日付のフォーマット（表示用）
@@ -459,7 +468,7 @@ const exportToExcel = () => {
                         <div class="summary-diff"
                             :class="{ 'positive': currentTotal > pastTotal, 'negative': currentTotal < pastTotal }">
                             {{ currentTotal > pastTotal ? '+' : '' }}{{ ((currentTotal - pastTotal) / (pastTotal || 1) *
-                            100).toFixed(1) }}%
+                                100).toFixed(1) }}%
                         </div>
                     </div>
                     <div class="summary-card past">

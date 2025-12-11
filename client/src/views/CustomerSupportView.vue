@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { db, auth } from '../lib/firebase'
 import { collection, doc, setDoc, Timestamp, getDoc } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
 
 const dialog = useDialogStore()
@@ -65,8 +65,10 @@ const sendContactForm = async () => {
     }
 }
 
+let unsubscribeAuth: Unsubscribe | null = null
+
 onMounted(() => {
-    onAuthStateChanged(auth, async (user) => {
+    unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         currentUser.value = user
         if (user) {
             // お客様情報を取得して電話番号を設定
@@ -78,6 +80,13 @@ onMounted(() => {
             }
         }
     })
+})
+
+onUnmounted(() => {
+    if (unsubscribeAuth) {
+        unsubscribeAuth()
+        console.log('[CustomerSupportView] Auth listener unsubscribed')
+    }
 })
 </script>
 
