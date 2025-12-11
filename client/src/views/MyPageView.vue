@@ -337,6 +337,36 @@ const deleteAccount = async () => {
             </div>
           </div>
 
+          <!-- 予約状況 -->
+          <div class="card reservation-container">
+            <h3>予約状況</h3>
+            <p v-if="loading" class="loading">読み込み中...</p>
+            <div v-else>
+              <div v-if="reservations.length === 0" class="no-data">
+                <p>現在、予約はありません。</p>
+                <router-link to="/" class="book-link">予約を入れる</router-link>
+              </div>
+              <ul v-else class="reservation-list">
+                <li v-for="res in reservations" :key="res.id" class="reservation-item">
+                  <div class="res-header">
+                    <span class="date">{{ formatDate(res.start_at) }}</span>
+                    <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
+                    <span v-else-if="res.status === 'pending'" class="status-badge pending">お店の確認待ち</span>
+                  </div>
+                  <div class="res-body">
+                    <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
+                      <span class="menu-title">{{ item.title }}</span>
+                      <span v-if="item.price" class="menu-price">¥{{ item.price.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                  <div class="res-footer">
+                    <button class="cancel-btn" @click="cancelReservation(res.id)">キャンセル</button>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+
           <!-- お問い合わせフォーム -->
           <div class="card contact-card">
             <div class="profile-header">
@@ -389,37 +419,6 @@ const deleteAccount = async () => {
             </div>
           </div>
         </aside>
-
-        <main class="reservation-column">
-          <div class="card reservation-container">
-            <h3>予約状況</h3>
-            <p v-if="loading" class="loading">読み込み中...</p>
-            <div v-else>
-              <div v-if="reservations.length === 0" class="no-data">
-                <p>現在、予約はありません。</p>
-                <router-link to="/" class="book-link">予約を入れる</router-link>
-              </div>
-              <ul v-else class="reservation-list">
-                <li v-for="res in reservations" :key="res.id" class="reservation-item">
-                  <div class="res-header">
-                    <span class="date">{{ formatDate(res.start_at) }}</span>
-                    <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
-                    <span v-else-if="res.status === 'pending'" class="status-badge pending">お店の確認待ち</span>
-                  </div>
-                  <div class="res-body">
-                    <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
-                      <span class="menu-title">{{ item.title }}</span>
-                      <span v-if="item.price" class="menu-price">¥{{ item.price.toLocaleString() }}</span>
-                    </div>
-                  </div>
-                  <div class="res-footer">
-                    <button class="cancel-btn" @click="cancelReservation(res.id)">キャンセル</button>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </main>
       </div>
     </div>
   </div>
