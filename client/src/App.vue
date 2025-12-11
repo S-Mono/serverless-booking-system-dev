@@ -101,6 +101,7 @@ const goToMessages = () => {
 
 // デバッグ用の環境変数
 const liffId = import.meta.env.VITE_MINI_APP_ID || '未設定'
+const envMode = import.meta.env.MODE || 'unknown'
 const currentUrl = typeof window !== 'undefined' ? window.location.href : ''
 const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includes('Line')
 </script>
@@ -118,7 +119,7 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
           URL: {{ currentUrl }}<br>
           LIFF ID: {{ liffId }}<br>
           UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}<br>
-          Mode: {{ import.meta.env.MODE }}
+          Mode: {{ envMode }}
         </p>
         <!-- スキップボタン -->
         <button @click="lineAuthStore.isInitializing = false" class="skip-btn"
