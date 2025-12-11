@@ -583,6 +583,23 @@ const deleteReservation = async (id: string) => {
 
 // 🟢 予約確定 (メッセージ作成機能付き)
 const approveReservation = async (res: Reservation) => {
+  // 🟢 予約内容の確認ダイアログ
+  const startDate = res.start_at.toDate()
+  const dateStr = startDate.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    weekday: 'short'
+  })
+  const staffName = getStaffName(res.staff_id)
+  const menuList = res.menu_items.map(m => `  ${m.title} (${m.duration}分) - ¥${m.price.toLocaleString()}`).join('\n')
+  const confirmMessage = `この内容で予約を確定します。\nよろしいでしょうか？\n\n【予約内容】\n日時: ${dateStr}\nお客様: ${res.customer_name}\n担当: ${staffName}\nメニュー:\n${menuList}\n\n合計: ¥${res.total_price.toLocaleString()} (${res.total_duration_min}分)`
+
+  const confirmed = await dialog.confirm(confirmMessage, '予約確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
+  if (!confirmed) return
+
   try {
     // 1. ステータス更新
     await updateDoc(doc(db, 'reservations', res.id), { status: 'confirmed' })
@@ -1248,7 +1265,7 @@ const exportReservationsToExcel = async () => {
           <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
             :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
+          }}</span>
         </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>

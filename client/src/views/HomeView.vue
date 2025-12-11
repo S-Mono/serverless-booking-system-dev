@@ -271,9 +271,26 @@ const formatDateJP = (dateStr: string) => { if (!dateStr) return ''; const d = n
 const submitReservation = async () => {
   if (!reservationDate.value || !currentUser.value || !selectedStaffId.value) return
 
+  // 🟢 予約内容の確認ダイアログ
+  const startDate = new Date(reservationDate.value)
+  const dateStr = startDate.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    weekday: 'short'
+  })
+  const staffName = availableStaffs.value.find(s => s.id === selectedStaffId.value)?.name || '担当者'
+  const menuList = selectedMenus.value.map(m => `  ${m.title} (${m.duration_min}分) - ¥${m.price_with_tax.toLocaleString()}`).join('\n')
+  const confirmMessage = `この内容で予約を確定します。\nよろしいでしょうか？\n\n【予約内容】\n日時: ${dateStr}\n担当: ${staffName}\nメニュー:\n${menuList}\n\n合計: ¥${totalAmount.value.toLocaleString()} (${totalDuration.value}分)`
+
+  const confirmed = await dialog.confirm(confirmMessage, '予約確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
+  if (!confirmed) return
+
   processing.value = true
   try {
-    const startDate = new Date(reservationDate.value); const now = new Date()
+    const now = new Date()
     if (startDate < now) throw new Error('過去の日時は選択できません。')
     const duration = totalDuration.value
     const endDate = new Date(startDate.getTime() + duration * 60000)

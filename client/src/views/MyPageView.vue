@@ -197,7 +197,7 @@ const saveProfile = async () => {
 }
 
 const cancelReservation = async (id: string) => {
-  const ok = await dialog.confirm('キャンセルしますか？')
+  const ok = await dialog.confirm('キャンセルしますか?', '確認', 'normal', { cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
   try {
     // 1. 予約自体の削除 (既存処理)
@@ -833,16 +833,17 @@ textarea:disabled {
 .reservation-item {
   border: 1px solid #eee;
   border-radius: 6px;
-  padding: 1rem;
+  padding: 1.25rem;
   background: #fcfcfc;
+  margin-bottom: 0.5rem;
 }
 
 .res-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.8rem;
-  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
   border-bottom: 1px dashed #eee;
 }
 
@@ -873,13 +874,13 @@ textarea:disabled {
 }
 
 .res-body {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .menu-item {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.5rem;
 }
 
 .menu-title {
@@ -957,11 +958,19 @@ textarea:disabled {
   text-align: right;
 }
 
+.reservation-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f0f0f0;
+}
+
 .cancel-btn {
   background: white;
   border: 1px solid #e74c3c;
   color: #e74c3c;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1.5rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9rem;
