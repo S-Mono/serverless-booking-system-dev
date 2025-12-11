@@ -29,6 +29,7 @@ const phoneNumber = ref('') // 電話番号
 const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
 const isProfileOpen = ref(false) // お客様情報の開閉状態
+const isCancellingReservation = ref(false) // 予約キャンセル中フラグ
 
 // 電話番号フォーマット（ハイフン自動補完）
 const formatPhoneNumber = (value: string) => {
@@ -413,7 +414,9 @@ const deleteAccount = async () => {
                     </div>
                   </div>
                   <div class="res-footer">
-                    <button class="cancel-btn" @click="cancelReservation(res.id)">キャンセル</button>
+                    <button class="cancel-btn" @click="cancelReservation(res.id)" :disabled="isCancellingReservation">
+                      {{ isCancellingReservation ? '処理中...' : 'キャンセル' }}
+                    </button>
                   </div>
                 </li>
               </ul>

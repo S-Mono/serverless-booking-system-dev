@@ -24,6 +24,7 @@ const messages = ref<Message[]>([])
 const loading = ref(true)
 const currentUser = ref<any>(null)
 const showArchived = ref(false) // 履歴表示フラグ
+const isDeletingMessages = ref(false) // 削除中フラグ
 
 // 表示するメッセージ（アクティブまたは全て）
 const displayMessages = computed(() => {
@@ -74,6 +75,8 @@ const fetchMessages = async (userId: string) => {
 
 // 古いメッセージを論理削除する関数
 const deleteOldMessages = async () => {
+    if (isDeletingMessages.value) return // 連打防止
+
     // アクティブなメッセージが1件以下なら整理する必要なし
     const activeMessages = messages.value.filter(msg => !msg.deleted_at)
     if (activeMessages.length <= 1) {
@@ -88,6 +91,7 @@ const deleteOldMessages = async () => {
     )
     if (!ok) return
 
+    isDeletingMessages.value = true
     loading.value = true
     try {
         const batch = writeBatch(db)
@@ -129,12 +133,16 @@ const deleteOldMessages = async () => {
     } catch (e) {
         console.error(e)
         dialog.alert('削除に失敗しました', 'エラー')
+    } finally {
         loading.value = false
+        isDeletingMessages.value = false
     }
 }
 
 // 履歴から完全削除する関数
 const permanentlyDeleteArchived = async () => {
+    if (isDeletingMessages.value) return // 連打防止
+
     const archived = messages.value.filter(msg => msg.deleted_at)
     if (archived.length === 0) {
         await dialog.alert('削除する履歴がありません', 'お知らせ')
@@ -148,6 +156,7 @@ const permanentlyDeleteArchived = async () => {
     )
     if (!ok) return
 
+    isDeletingMessages.value = true
     loading.value = true
     try {
         const batch = writeBatch(db)
@@ -171,6 +180,7 @@ const permanentlyDeleteArchived = async () => {
         dialog.alert(`削除に失敗しました。\nエラー: ${errorCode}\n${errorMessage}`, 'エラー')
     } finally {
         loading.value = false
+        isDeletingMessages.value = false
     }
 }
 
@@ -208,13 +218,14 @@ onMounted(() => {
         <p v-if="showArchived" class="archive-notice">※ 履歴は1年以上経過後、自動的に削除します。</p>
 
         <div class="action-buttons">
-            <button v-if="activeCount > 1 && !showArchived" @click="deleteOldMessages" class="cleanup-btn">
-                🧹 整理
+            <button v-if="activeCount > 1 && !showArchived" @click="deleteOldMessages" class="cleanup-btn"
+                :disabled="isDeletingMessages">
+                {{ isDeletingMessages ? '処理中...' : '🧹 整理' }}
             </button>
 
             <button v-if="showArchived && archivedCount > 0" @click="permanentlyDeleteArchived"
-                class="delete-archived-btn">
-                🗑️ 履歴削除
+                class="delete-archived-btn" :disabled="isDeletingMessages">
+                {{ isDeletingMessages ? '処理中...' : '🗑️ 履歴削除' }}
             </button>
         </div>
 
