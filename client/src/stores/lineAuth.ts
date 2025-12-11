@@ -26,8 +26,20 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
 
     isInitializing.value = true
 
+    // 10秒タイムアウト設定
+    const timeout = setTimeout(() => {
+      if (isInitializing.value) {
+        error.value = 'LIFF初期化がタイムアウトしました。ネットワークを確認してください。'
+        console.error('LIFF init timeout')
+        isInitializing.value = false
+      }
+    }, 10000)
+
     try {
       const miniAppId = import.meta.env.VITE_MINI_APP_ID
+      console.log('[DEBUG] VITE_MINI_APP_ID:', miniAppId)
+      console.log('[DEBUG] import.meta.env:', import.meta.env)
+      
       if (!miniAppId) {
         const errorMsg = 'VITE_MINI_APP_ID is not defined. Please check .env file or Vercel environment variables.'
         console.error(errorMsg)
@@ -36,39 +48,56 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
         if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
           alert(errorMsg)
         }
+        clearTimeout(timeout)
         isInitializing.value = false
         return
       }
 
-      console.log('Initializing LINE Mini App:', miniAppId)
+      console.log('[DEBUG] Initializing LINE Mini App:', miniAppId)
+      console.log('[DEBUG] window.location:', window.location.href)
+      console.log('[DEBUG] navigator.userAgent:', navigator.userAgent)
+
+      // LIFF SDKが読み込まれているか確認
+      if (typeof liff === 'undefined') {
+        throw new Error('LIFF SDKが読み込まれていません')
+      }
 
       // LINEミニアプリ初期化（LIFF SDKを使用）
+      console.log('[DEBUG] Calling liff.init...')
       await liff.init({ liffId: miniAppId })
+      console.log('[DEBUG] liff.init completed')
       
+      clearTimeout(timeout)
       isInitialized.value = true
 
       // LINEアプリ内かどうかの判定
       if (liff.isInClient()) {
         isLineApp.value = true
-        console.log('Running in LINE app')
+        console.log('[DEBUG] Running in LINE app')
         
         // ミニアプリは常にログイン状態のはず
         if (liff.isLoggedIn()) {
           try {
             profile.value = await liff.getProfile()
-            console.log('LINE Profile loaded:', profile.value.displayName)
+            console.log('[DEBUG] LINE Profile loaded:', profile.value.displayName)
           } catch (e) {
-            console.error('Profile fetch failed', e)
+            console.error('[DEBUG] Profile fetch failed', e)
           }
         } else {
-          console.warn('Not logged in (unexpected in Mini App)')
+          console.warn('[DEBUG] Not logged in (unexpected in Mini App)')
         }
       } else {
-        console.log('Not running in LINE app (browser or other)')
+        console.log('[DEBUG] Not running in LINE app (browser or other)')
       }
     } catch (err: any) {
-      console.error('LINE Mini App init failed', err)
-      error.value = err.message
+      clearTimeout(timeout)
+      console.error('[DEBUG] LINE Mini App init failed', err)
+      console.error('[DEBUG] Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      })
+      error.value = `初期化エラー: ${err.message}`
       // エラー時もアラート表示
       if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
         alert(`LINE初期化エラー: ${err.message}`)
