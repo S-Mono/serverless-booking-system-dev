@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc } from 'firebase/firestore'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged, signOut, type Unsubscribe } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
@@ -138,7 +138,12 @@ const fetchReservations = async (userId: string) => {
         }
       }
     }
-  } catch (error) {
+  } catch (error: any) {
+    // AbortErrorはユーザーが画面を離れたことによる正常な中断
+    if (error.name === 'AbortError') {
+      console.log('[MyPage] Fetch aborted (user navigated away)')
+      return
+    }
     console.error('[MyPage] Error fetching reservations:', error)
     dialog.alert('予約情報の取得に失敗しました。ページを更新してください。', 'エラー')
   } finally {
@@ -321,6 +326,11 @@ const sendContactForm = async () => {
     contactMessage.value = ''
     isContactFormOpen.value = false
   } catch (error: any) {
+    // AbortErrorは無視
+    if (error.name === 'AbortError') {
+      console.log('[MyPage] Contact form aborted')
+      return
+    }
     console.error('お問い合わせ送信エラー:', error)
     const errorMessage = error?.message || '不明なエラー'
     const errorCode = error?.code || ''
@@ -330,12 +340,23 @@ const sendContactForm = async () => {
   }
 }
 
+// 🟢 Authリスナーのクリーンアップ用
+let unsubscribeAuth: Unsubscribe | null = null
+
 onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
+  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user
     if (user) fetchReservations(user.uid)
     else loading.value = false
   })
+})
+
+onUnmounted(() => {
+  // リスナーを解除してメモリリークとAbortErrorを防ぐ
+  if (unsubscribeAuth) {
+    unsubscribeAuth()
+    console.log('[MyPage] Auth listener unsubscribed')
+  }
 })
 
 const formatDate = (ts: Timestamp) => {
@@ -379,6 +400,11 @@ const deleteAccount = async () => {
     await signOut(auth)
     router.push('/login')
   } catch (error: any) {
+    // AbortErrorは無視
+    if (error.name === 'AbortError') {
+      console.log('[MyPage] Delete account aborted')
+      return
+    }
     console.error('退会処理エラー:', error)
     const errorMessage = error?.message || '不明なエラー'
     dialog.alert(`退会処理に失敗しました。\n${errorMessage}\n\n時間をおいて再度お試しいただくか、カスタマーサポートまでお問い合わせください。`, 'エラー')
