@@ -38,14 +38,32 @@ const formatPhoneNumber = (value: string) => {
   // 桁数に応じてフォーマット
   if (numbers.length <= 3) {
     return numbers
-  } else if (numbers.length <= 7) {
+  } else if (numbers.length <= 6) {
+    // 3-3 or 3-4
     return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
-  } else if (numbers.length <= 11) {
-    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
-  } else {
-    // 11桁を超える場合は11桁まで
+  } else if (numbers.length === 7) {
+    // 7桁: 000-0000 (固定電話)
+    return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  } else if (numbers.length === 8) {
+    // 8桁: 0000-0000 (4-4形式)
+    return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
+  } else if (numbers.length === 9) {
+    // 9桁: 000-000-000 または 0000-0-0000 → 一般的なのは 000-000-000
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  } else if (numbers.length === 10) {
+    // 10桁: 000-000-0000 (携帯/固定)
+    // 先頭が090,080,070などなら携帯形式
+    if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
+    } else {
+      // 固定電話の場合 (0X-XXXX-XXXX または 0XX-XXX-XXXX)
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+    }
+  } else if (numbers.length >= 11) {
+    // 11桁: 000-0000-0000 (携帯)
     return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
   }
+  return numbers
 }
 
 const handlePhoneInput = (event: Event) => {
