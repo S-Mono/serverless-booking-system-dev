@@ -34,7 +34,7 @@ const isProfileOpen = ref(false) // お客様情報の開閉状態
 const formatPhoneNumber = (value: string) => {
   // 数字のみ抽出
   const numbers = value.replace(/[^0-9]/g, '')
-  
+
   // 桁数に応じてフォーマット
   if (numbers.length <= 3) {
     return numbers
@@ -53,9 +53,9 @@ const handlePhoneInput = (event: Event) => {
   const cursorPos = input.selectionStart || 0
   const oldValue = phoneNumber.value
   const newValue = formatPhoneNumber(input.value)
-  
+
   phoneNumber.value = newValue
-  
+
   // カーソル位置を調整
   if (newValue.length > oldValue.length && (newValue[cursorPos] === '-' || newValue[cursorPos - 1] === '-')) {
     setTimeout(() => {
