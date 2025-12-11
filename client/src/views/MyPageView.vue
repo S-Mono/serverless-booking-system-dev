@@ -205,25 +205,49 @@ const saveProfile = async () => {
 const cancelReservation = async (id: string) => {
   const ok = await dialog.open('キャンセルしますか?', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
+  
+  isCancellingReservation.value = true
+  console.log('[MyPage] Cancelling reservation:', id)
+  console.log('[MyPage] Current user UID:', currentUser.value?.uid)
+  
   try {
+    // 予約データを取得して確認
+    const resDoc = await getDoc(doc(db, 'reservations', id))
+    if (!resDoc.exists()) {
+      throw new Error('予約が見つかりません')
+    }
+    
+    const resData = resDoc.data()
+    console.log('[MyPage] Reservation data:', resData)
+    console.log('[MyPage] Reservation customer_id:', resData.customer_id)
+    
     // 1. 予約自体の削除 (既存処理)
     await deleteDoc(doc(db, 'reservations', id))
+    console.log('[MyPage] Reservation deleted successfully')
 
     // 🟢 2. 【追加】関連するメッセージを「キャンセル扱い」に更新
     const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
     const msgSnap = await getDocs(msgQ)
 
     // 関連するメッセージがあれば全て更新
-    msgSnap.forEach(async (d) => {
-      await updateDoc(d.ref, {
+    const updatePromises = msgSnap.docs.map(d => 
+      updateDoc(d.ref, {
         is_cancelled: true, // キャンセル済みフラグ
         title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
       })
-    })
+    )
+    await Promise.all(updatePromises)
+    console.log('[MyPage] Messages updated successfully')
 
     dialog.alert('予約をキャンセルしました')
     reservations.value = reservations.value.filter(res => res.id !== id)
-  } catch (error) { console.error(error); dialog.alert('キャンセル失敗', 'エラー') }
+  } catch (error: any) {
+    console.error('[MyPage] Cancel error:', error)
+    const errorMsg = error?.message || error?.code || '不明なエラー'
+    dialog.alert(`キャンセル失敗: ${errorMsg}`, 'エラー')
+  } finally {
+    isCancellingReservation.value = false
+  }
 }
 
 // 戻る
