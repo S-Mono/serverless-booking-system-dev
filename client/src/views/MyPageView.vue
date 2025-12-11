@@ -205,22 +205,22 @@ const saveProfile = async () => {
 const cancelReservation = async (id: string) => {
   const ok = await dialog.open('キャンセルしますか?', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
-  
+
   isCancellingReservation.value = true
   console.log('[MyPage] Cancelling reservation:', id)
   console.log('[MyPage] Current user UID:', currentUser.value?.uid)
-  
+
   try {
     // 予約データを取得して確認
     const resDoc = await getDoc(doc(db, 'reservations', id))
     if (!resDoc.exists()) {
       throw new Error('予約が見つかりません')
     }
-    
+
     const resData = resDoc.data()
     console.log('[MyPage] Reservation data:', resData)
     console.log('[MyPage] Reservation customer_id:', resData.customer_id)
-    
+
     // 1. 予約自体の削除 (既存処理)
     await deleteDoc(doc(db, 'reservations', id))
     console.log('[MyPage] Reservation deleted successfully')
@@ -230,7 +230,7 @@ const cancelReservation = async (id: string) => {
     const msgSnap = await getDocs(msgQ)
 
     // 関連するメッセージがあれば全て更新
-    const updatePromises = msgSnap.docs.map(d => 
+    const updatePromises = msgSnap.docs.map(d =>
       updateDoc(d.ref, {
         is_cancelled: true, // キャンセル済みフラグ
         title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
@@ -454,7 +454,8 @@ const deleteAccount = async () => {
                     </div>
                   </div>
                   <div class="reservation-actions">
-                    <button v-if="res.status === 'confirmed' || res.status === 'pending'" class="cancel-btn" @click="cancelReservation(res.id)" :disabled="isCancellingReservation">
+                    <button v-if="res.status === 'confirmed' || res.status === 'pending'" class="cancel-btn"
+                      @click="cancelReservation(res.id)" :disabled="isCancellingReservation">
                       {{ isCancellingReservation ? '処理中...' : 'キャンセル' }}
                     </button>
                   </div>
