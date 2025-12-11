@@ -12,6 +12,7 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
   const profile = ref<any>(null) // LINEプロフィール情報
   const error = ref<string | null>(null)
   const isInitialized = ref(false) // 初期化完了フラグ
+  const isInitializing = ref(false) // 初期化中フラグ（ローディング表示用）
 
   /**
    * LINEミニアプリの初期化
@@ -23,10 +24,19 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
       return
     }
 
+    isInitializing.value = true
+
     try {
       const miniAppId = import.meta.env.VITE_MINI_APP_ID
       if (!miniAppId) {
-        console.warn('VITE_MINI_APP_ID is not defined')
+        const errorMsg = 'VITE_MINI_APP_ID is not defined. Please check .env file or Vercel environment variables.'
+        console.error(errorMsg)
+        error.value = errorMsg
+        // 审査・開発環境でエラーを明示的に表示
+        if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
+          alert(errorMsg)
+        }
+        isInitializing.value = false
         return
       }
 
@@ -59,6 +69,12 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
     } catch (err: any) {
       console.error('LINE Mini App init failed', err)
       error.value = err.message
+      // エラー時もアラート表示
+      if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
+        alert(`LINE初期化エラー: ${err.message}`)
+      }
+    } finally {
+      isInitializing.value = false
     }
   }
 
@@ -100,6 +116,7 @@ export const useLineAuthStore = defineStore('lineAuth', () => {
     profile,
     error,
     isInitialized,
+    isInitializing, // 追加: ローディング表示用
     // Actions
     init,
     login,

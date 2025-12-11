@@ -3,11 +3,15 @@ import { ref, onMounted } from 'vue'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
+import { useRouter } from 'vue-router'
 
 const dialog = useDialogStore()
 const userStore = useUserStore()
+const router = useRouter()
+const functions = getFunctions(undefined, 'asia-northeast1')
 
 interface Reservation {
   id: string
@@ -229,6 +233,45 @@ const formatDate = (ts: Timestamp) => {
   const d = ts.toDate()
   return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short' })
 }
+
+// 退会処理
+const isDeletingAccount = ref(false)
+
+const deleteAccount = async () => {
+  // 二重確認
+  const confirm1 = await dialog.confirm(
+    '本当に退会しますか？\n\nこの操作を実行すると：\n・本サービスとLINEの連携が解除されます\n・予約履歴やアカウント情報が削除されます\n・予約中の予約は自動的にキャンセルされます\n・この操作は取り消せません',
+    '退会の確認',
+    'danger'
+  )
+  if (!confirm1) return
+
+  const confirm2 = await dialog.confirm(
+    '最終確認です。\n本当に退会してもよろしいですか？',
+    '最終確認',
+    'danger'
+  )
+  if (!confirm2) return
+
+  isDeletingAccount.value = true
+
+  try {
+    // Cloud Functionを呼び出し
+    const deleteUserAccount = httpsCallable(functions, 'deleteUserAccount')
+    await deleteUserAccount()
+
+    await dialog.alert('退会処理が完了しました。\nご利用ありがとうございました。', '退会完了')
+
+    // ログアウトしてログイン画面へ
+    router.push('/login')
+  } catch (error: any) {
+    console.error('退会処理エラー:', error)
+    const errorMessage = error?.message || '不明なエラー'
+    dialog.alert(`退会処理に失敗しました。\n${errorMessage}\n\n時間をおいて再度お試しいただくか、カスタマーサポートまでお問い合わせください。', 'エラー')
+  } finally {
+    isDeletingAccount.value = false
+  }
+}
 </script>
 
 <template>
@@ -290,6 +333,25 @@ const formatDate = (ts: Timestamp) => {
 
               <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
                 {{ isSavingProfile ? '保存中...' : '保存する' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 退会セクション -->
+          <div class="card danger-card">
+            <h3>アカウントの削除</h3>
+            <div class="danger-zone">
+              <p class="danger-note">
+                退会すると、以下の処理が実行されます：
+              </p>
+              <ul class="danger-list">
+                <li>本サービスとLINEの連携が解除されます</li>
+                <li>予約履歴やアカウント情報が削除されます</li>
+                <li>予約中の予約は自動的にキャンセルされます</li>
+                <li><strong>この操作は取り消せません</strong></li>
+              </ul>
+              <button @click="deleteAccount" class="delete-account-btn" :disabled="isDeletingAccount">
+                {{ isDeletingAccount ? '処理中...' : '退会する' }}
               </button>
             </div>
           </div>
@@ -730,6 +792,68 @@ textarea:disabled {
 .menu-price {
   font-weight: bold;
   color: #555;
+}
+
+/* 退会セクション */
+.danger-card {
+  margin-top: 1rem;
+  border: 2px solid #e74c3c;
+}
+
+.danger-card h3 {
+  color: #e74c3c;
+  margin: 0 0 1rem 0;
+}
+
+.danger-zone {
+  background: #fff5f5;
+  padding: 1rem;
+  border-radius: 4px;
+}
+
+.danger-note {
+  color: #c0392b;
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem 0;
+  font-weight: 500;
+}
+
+.danger-list {
+  margin: 0.5rem 0 1rem 1.5rem;
+  padding: 0;
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.8;
+}
+
+.danger-list li {
+  margin-bottom: 0.3rem;
+}
+
+.danger-list strong {
+  color: #e74c3c;
+}
+
+.delete-account-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: bold;
+  transition: background 0.2s;
+  width: 100%;
+}
+
+.delete-account-btn:hover:not(:disabled) {
+  background: #c0392b;
+}
+
+.delete-account-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 
 .res-footer {

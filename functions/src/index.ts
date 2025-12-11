@@ -1,7 +1,9 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
+import axios from "axios";
 
 admin.initializeApp();
 
@@ -277,6 +279,160 @@ ${contact.created_at?.toDate().toLocaleString("ja-JP", {
         errorStack: errorObj.stack,
       });
       throw error;
+    }
+  }
+);
+
+/**
+ * ユーザー退会処理
+ * LINEミニアプリ開発ガイドライン準拠
+ * https://developers.line.biz/ja/docs/line-mini-app/development-guidelines/#deauthorize
+ */
+export const deleteUserAccount = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const userId = request.auth?.uid;
+
+    if (!userId) {
+      throw new HttpsError("unauthenticated", "認証が必要です");
+    }
+
+    logger.info("User account deletion started", {userId});
+
+    try {
+      const db = admin.firestore();
+      const batch = db.batch();
+
+      // 1. LINE連携解除（権限取り消し）
+      try {
+        // ユーザードキュメントからLINE情報を取得
+        const customerDoc = await db.collection("customers").doc(userId).get();
+        const customerData = customerDoc.data();
+
+        if (customerData?.line_user_id) {
+          const lineUserId = customerData.line_user_id;
+          const channelId = process.env.LINE_CHANNEL_ID;
+          const channelSecret = process.env.LINE_CHANNEL_SECRET;
+
+          if (!channelId || !channelSecret) {
+            logger.warn("LINE credentials not configured");
+          } else {
+            // チャネルアクセストークン取得
+            const tokenResponse = await axios.post(
+              "https://api.line.me/oauth2/v2.1/token",
+              new URLSearchParams({
+                grant_type: "client_credentials",
+                client_id: channelId,
+                client_secret: channelSecret,
+              }),
+              {
+                headers: {"Content-Type": "application/x-www-form-urlencoded"},
+              }
+            );
+
+            const accessToken = tokenResponse.data.access_token;
+
+            // LINE権限取り消しAPI呼び出し
+            await axios.post(
+              "https://api.line.me/oauth2/v2.1/revoke",
+              new URLSearchParams({
+                access_token: accessToken,
+                client_id: channelId,
+                client_secret: channelSecret,
+              }),
+              {
+                headers: {"Content-Type": "application/x-www-form-urlencoded"},
+              }
+            );
+
+            logger.info("LINE authorization revoked", {userId, lineUserId});
+          }
+        }
+      } catch (lineError: unknown) {
+        const errorObj = lineError as {message?: string};
+        logger.error("Failed to revoke LINE authorization", {
+          userId,
+          error: errorObj.message,
+        });
+        // LINE連携解除に失敗してもアカウント削除は続行
+      }
+
+      // 2. 予約データをキャンセル扱いに更新
+      const reservationsSnapshot = await db
+        .collection("reservations")
+        .where("customer_id", "==", userId)
+        .get();
+
+      reservationsSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          status: "cancelled",
+          cancelled_at: admin.firestore.FieldValue.serverTimestamp(),
+          cancel_reason: "ユーザー退会のため自動キャンセル",
+        });
+      });
+
+      logger.info("Reservations cancelled", {
+        userId,
+        count: reservationsSnapshot.size,
+      });
+
+      // 3. メッセージをキャンセル扱いに更新
+      const messagesSnapshot = await db
+        .collection("messages")
+        .where("customer_id", "==", userId)
+        .get();
+
+      messagesSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          is_cancelled: true,
+          title: "【退会済】" + doc.data().title,
+        });
+      });
+
+      logger.info("Messages marked as cancelled", {
+        userId,
+        count: messagesSnapshot.size,
+      });
+
+      // 4. お問い合わせデータに退会マーク
+      const contactsSnapshot = await db
+        .collection("contacts")
+        .where("customer_id", "==", userId)
+        .get();
+
+      contactsSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          user_deleted: true,
+        });
+      });
+
+      // 5. 顧客情報を削除
+      batch.delete(db.collection("customers").doc(userId));
+
+      // バッチコミット
+      await batch.commit();
+
+      logger.info("Firestore data deleted/updated", {userId});
+
+      // 6. Firebase Authenticationからユーザー削除
+      await admin.auth().deleteUser(userId);
+
+      logger.info("User account deleted successfully", {userId});
+
+      return {success: true, message: "退会処理が完了しました"};
+    } catch (error: unknown) {
+      const errorObj = error as {message?: string; code?: string};
+      logger.error("Error deleting user account", {
+        userId,
+        error: errorObj.message,
+        code: errorObj.code,
+      });
+      throw new HttpsError(
+        "internal",
+        "退会処理中にエラーが発生しました: " + errorObj.message
+      );
     }
   }
 );
