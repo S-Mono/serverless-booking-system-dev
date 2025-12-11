@@ -13,10 +13,22 @@ import('vconsole').then(({ default: VConsole }) => {
 
 // 🟢 グローバルAbortErrorハンドラー（Firebase SDKの内部リクエスト中断を静かに処理）
 window.addEventListener('unhandledrejection', (event) => {
-  // AbortErrorはユーザーのページ遷移などによる正常な中断
-  if (event.reason?.name === 'AbortError') {
+  const reason = event.reason
+  
+  // AbortErrorを多様な方法で検出
+  const isAbortError = 
+    reason?.name === 'AbortError' ||
+    reason?.constructor?.name === 'AbortError' ||
+    (reason instanceof Error && reason.name === 'AbortError') ||
+    (typeof reason === 'object' && reason?.message?.includes('aborted'))
+  
+  if (isAbortError) {
     event.preventDefault() // コンソールエラーを抑制
-    console.log('[Global] AbortError caught and suppressed')
+    // デバッグ用に詳細を記録（本番では削除可）
+    if (import.meta.env.MODE !== 'production') {
+      console.log('[Global] AbortError suppressed:', reason)
+    }
+    return false // エラー伝播を停止
   }
 })
 
