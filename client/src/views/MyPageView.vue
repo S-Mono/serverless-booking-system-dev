@@ -360,7 +360,7 @@ const deleteAccount = async () => {
   } catch (error: any) {
     console.error('退会処理エラー:', error)
     const errorMessage = error?.message || '不明なエラー'
-    dialog.alert(`退会処理に失敗しました。\n${errorMessage}\n\n時間をおいて再度お試しいただくか、カスタマーサポートまでお問い合わせください。', 'エラー')
+    dialog.alert(`退会処理に失敗しました。\n${errorMessage}\n\n時間をおいて再度お試しいただくか、カスタマーサポートまでお問い合わせください。`, 'エラー')
   } finally {
     isDeletingAccount.value = false
   }
