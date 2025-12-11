@@ -114,11 +114,17 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
       <p v-if="lineAuthStore.error" class="error-text">{{ lineAuthStore.error }}</p>
       <!-- デバッグ情報 -->
       <div class="debug-info">
-        <p style="font-size: 12px; color: #fff; margin-top: 20px;">
+        <p style="font-size: 12px; color: #fff; margin-top: 20px; text-align: center; line-height: 1.6;">
           URL: {{ currentUrl }}<br>
           LIFF ID: {{ liffId }}<br>
-          UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}
+          UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}<br>
+          Mode: {{ import.meta.env.MODE }}
         </p>
+        <!-- スキップボタン -->
+        <button @click="lineAuthStore.isInitializing = false" class="skip-btn"
+          style="margin-top: 20px; padding: 10px 20px; background: rgba(255,255,255,0.3); border: 1px solid white; color: white; border-radius: 4px; cursor: pointer;">
+          スキップして続行
+        </button>
       </div>
     </div>
   </div>
