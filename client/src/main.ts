@@ -4,14 +4,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 
-// 🟢 vConsole for mobile debugging (LINEミニアプリでコンソールログを確認するため)
-// 審査中は常に有効化（審査完了後に削除）
-import('vconsole').then(({ default: VConsole }) => {
-  new VConsole()
-  console.log('[vConsole] Enabled for debugging')
-})
-
-// 🟢 グローバルAbortErrorハンドラー（Firebase SDKの内部リクエスト中断を静かに処理）
+// 🟢 グローバルAbortErrorハンドラー（vConsoleより先に設定）
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason
   
@@ -20,16 +13,23 @@ window.addEventListener('unhandledrejection', (event) => {
     reason?.name === 'AbortError' ||
     reason?.constructor?.name === 'AbortError' ||
     (reason instanceof Error && reason.name === 'AbortError') ||
-    (typeof reason === 'object' && reason?.message?.includes('aborted'))
+    (typeof reason === 'object' && reason !== null && (
+      reason.message?.includes('aborted') ||
+      reason.message?.includes('user aborted')
+    ))
   
   if (isAbortError) {
     event.preventDefault() // コンソールエラーを抑制
-    // デバッグ用に詳細を記録（本番では削除可）
-    if (import.meta.env.MODE !== 'production') {
-      console.log('[Global] AbortError suppressed:', reason)
-    }
-    return false // エラー伝播を停止
+    event.stopImmediatePropagation() // 他のリスナーへの伝播を停止
+    return false
   }
+}, true) // キャプチャフェーズで先に処理
+
+// 🟢 vConsole for mobile debugging (LINEミニアプリでコンソールログを確認するため)
+// 審査中は常に有効化（審査完了後に削除）
+import('vconsole').then(({ default: VConsole }) => {
+  new VConsole()
+  console.log('[vConsole] Enabled for debugging')
 })
 
 const app = createApp(App)
