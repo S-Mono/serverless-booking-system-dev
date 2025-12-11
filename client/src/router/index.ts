@@ -7,7 +7,7 @@ import AdminSettingsView from '../views/AdminSettingsView.vue'
 import AdminMenuSettingsView from '../views/AdminMenuSettingsView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import { auth } from '../lib/firebase'
-import { getIdTokenResult } from 'firebase/auth'
+import { getIdTokenResult, signOut } from 'firebase/auth'
 
 // 管理キーはクライアント側に置かない（Firebase 管理者クレームで管理）
 
@@ -97,6 +97,18 @@ const router = createRouter({
 
 // 🔒 ナビゲーションガード (門番)
 router.beforeEach(async (to, from, next) => {
+  // 🟢 ログイン画面に遷移する場合、現在ログイン中なら自動ログアウト
+  if (to.path === '/login' && auth.currentUser) {
+    try {
+      // 再ログイン抑止フラグを設定（5秒間）
+      localStorage.setItem('logout_flag', Date.now().toString())
+      await signOut(auth)
+      console.log('[Router] Auto logout on login page navigation')
+    } catch (error) {
+      console.error('[Router] Auto logout failed:', error)
+    }
+  }
+
   // requiresAdmin がついているページは Firebase の管理者クレームを確認する
   if (to.meta.requiresAdmin) {
     // Firebase の初期化完了を待ち、現在のユーザーを取得
