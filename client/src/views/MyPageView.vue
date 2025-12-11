@@ -236,6 +236,7 @@ const formatDate = (ts: Timestamp) => {
 
 // 退会処理
 const isDeletingAccount = ref(false)
+const isDeleteAccountOpen = ref(false) // 退会セクションの開閉状態
 
 const deleteAccount = async () => {
   // 二重確認
@@ -402,8 +403,13 @@ const deleteAccount = async () => {
 
           <!-- 退会セクション -->
           <div class="card danger-card">
-            <h3>アカウントの削除</h3>
-            <div class="danger-zone">
+            <div class="profile-header">
+              <h3>アカウントの削除</h3>
+              <button @click="isDeleteAccountOpen = !isDeleteAccountOpen" class="toggle-btn danger-toggle">
+                {{ isDeleteAccountOpen ? '閉じる' : '開く' }}
+              </button>
+            </div>
+            <div v-show="isDeleteAccountOpen" class="danger-zone">
               <p class="danger-note">
                 退会すると、以下の処理が実行されます：
               </p>
@@ -499,6 +505,14 @@ const deleteAccount = async () => {
   background: #2980b9;
 }
 
+.danger-toggle {
+  background: #e74c3c;
+}
+
+.danger-toggle:hover {
+  background: #c0392b;
+}
+
 .profile-form {
   animation: slideDown 0.3s ease-out;
 }
@@ -533,10 +547,20 @@ const deleteAccount = async () => {
 }
 
 .content-grid {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 2rem;
-  align-items: start;
+  display: block;
+  /* スマホ優先: 1カラムレイアウト */
+}
+
+@media (min-width: 768px) {
+  .content-grid {
+    display: flex;
+    justify-content: center;
+  }
+
+  .profile-column {
+    max-width: 700px;
+    width: 100%;
+  }
 }
 
 .card {
@@ -621,6 +645,11 @@ const deleteAccount = async () => {
 .save-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+/* 予約状況 */
+.reservation-container {
+  margin-top: 1.5rem;
 }
 
 /* お問い合わせフォーム */
