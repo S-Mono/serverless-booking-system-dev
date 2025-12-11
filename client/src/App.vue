@@ -96,6 +96,11 @@ const goToMessages = () => {
   closeMenu()
   router.push('/messages')
 }
+
+// デバッグ用の環境変数
+const liffId = import.meta.env.VITE_MINI_APP_ID || '未設定'
+const currentUrl = typeof window !== 'undefined' ? window.location.href : ''
+const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includes('Line')
 </script>
 
 <template>
@@ -108,9 +113,9 @@ const goToMessages = () => {
       <!-- デバッグ情報 -->
       <div class="debug-info">
         <p style="font-size: 12px; color: #fff; margin-top: 20px;">
-          URL: {{ window.location.href }}<br>
-          LIFF ID: {{ import.meta.env.VITE_MINI_APP_ID || '未設定' }}<br>
-          UserAgent: {{ navigator.userAgent.includes('Line') ? 'LINE' : 'ブラウザ' }}
+          URL: {{ currentUrl }}<br>
+          LIFF ID: {{ liffId }}<br>
+          UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}
         </p>
       </div>
     </div>
