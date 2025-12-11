@@ -164,9 +164,12 @@ const permanentlyDeleteArchived = async () => {
         // 画面をリロード
         if (currentUser.value) await fetchMessages(currentUser.value.uid)
 
-    } catch (e) {
-        console.error(e)
-        dialog.alert('削除に失敗しました', 'エラー')
+    } catch (e: any) {
+        console.error('履歴削除エラー:', e)
+        const errorMessage = e?.message || '不明なエラー'
+        const errorCode = e?.code || ''
+        dialog.alert(`削除に失敗しました。\nエラー: ${errorCode}\n${errorMessage}`, 'エラー')
+    } finally {
         loading.value = false
     }
 }

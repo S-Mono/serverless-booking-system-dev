@@ -337,25 +337,6 @@ const deleteAccount = async () => {
             </div>
           </div>
 
-          <!-- 退会セクション -->
-          <div class="card danger-card">
-            <h3>アカウントの削除</h3>
-            <div class="danger-zone">
-              <p class="danger-note">
-                退会すると、以下の処理が実行されます：
-              </p>
-              <ul class="danger-list">
-                <li>本サービスとLINEの連携が解除されます</li>
-                <li>予約履歴やアカウント情報が削除されます</li>
-                <li>予約中の予約は自動的にキャンセルされます</li>
-                <li><strong>この操作は取り消せません</strong></li>
-              </ul>
-              <button @click="deleteAccount" class="delete-account-btn" :disabled="isDeletingAccount">
-                {{ isDeletingAccount ? '処理中...' : '退会する' }}
-              </button>
-            </div>
-          </div>
-
           <!-- お問い合わせフォーム -->
           <div class="card contact-card">
             <div class="profile-header">
@@ -385,6 +366,25 @@ const deleteAccount = async () => {
 
               <button @click="sendContactForm" :disabled="isSendingContact" class="save-btn">
                 {{ isSendingContact ? '送信中...' : '送信する' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 退会セクション -->
+          <div class="card danger-card">
+            <h3>アカウントの削除</h3>
+            <div class="danger-zone">
+              <p class="danger-note">
+                退会すると、以下の処理が実行されます：
+              </p>
+              <ul class="danger-list">
+                <li>本サービスとLINEの連携が解除されます</li>
+                <li>予約履歴やアカウント情報が削除されます</li>
+                <li>予約中の予約は自動的にキャンセルされます</li>
+                <li><strong>この操作は取り消せません</strong></li>
+              </ul>
+              <button @click="deleteAccount" class="delete-account-btn" :disabled="isDeletingAccount">
+                {{ isDeletingAccount ? '処理中...' : '退会する' }}
               </button>
             </div>
           </div>
