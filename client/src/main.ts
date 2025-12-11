@@ -11,6 +11,15 @@ import('vconsole').then(({ default: VConsole }) => {
   console.log('[vConsole] Enabled for debugging')
 })
 
+// 🟢 グローバルAbortErrorハンドラー（Firebase SDKの内部リクエスト中断を静かに処理）
+window.addEventListener('unhandledrejection', (event) => {
+  // AbortErrorはユーザーのページ遷移などによる正常な中断
+  if (event.reason?.name === 'AbortError') {
+    event.preventDefault() // コンソールエラーを抑制
+    console.log('[Global] AbortError caught and suppressed')
+  }
+})
+
 const app = createApp(App)
 
 app.use(createPinia())
