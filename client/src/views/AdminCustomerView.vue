@@ -131,11 +131,11 @@ const saveCustomer = async () => {
 }
 
 const deleteCustomer = async (id: string) => {
-    const ok = await dialog.confirm('この顧客を削除（ゴミ箱へ移動）しますか？', '削除確認', 'danger')
+    const ok = await dialog.confirm('この顧客を削除済みに移動しますか？', '削除確認', 'danger')
     if (!ok) return
     try {
         await updateDoc(doc(db, 'customers', id), { deleted_at: Timestamp.now() })
-        dialog.alert('ゴミ箱に移動しました')
+        dialog.alert('削除済みに移動しました')
         fetchCustomers()
     } catch (e) { dialog.alert('削除失敗') }
 }
@@ -180,7 +180,7 @@ onMounted(() => { fetchCustomers() })
             </div>
             <h2>顧客管理</h2>
             <div class="header-right">
-                <button @click="goToTrash" class="trash-link-btn">🗑️ ゴミ箱を見る</button>
+                <button @click="goToTrash" class="trash-link-btn">� 削除済み顧客を見る</button>
             </div>
         </header>
 

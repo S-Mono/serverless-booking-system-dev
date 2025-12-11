@@ -23,7 +23,7 @@ interface Reservation {
   customer_id?: string; // 👈 追加
   customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
 }
-interface Menu { id: string; title: string; duration_min: number; price: number }
+interface Menu { id: string; title: string; duration_min: number; price: number; available_staff_ids?: string[] } // 🟢 追加
 interface ShopConfig { holiday_weekdays: number[]; closed_dates: string[]; business_hours: { start: string; end: string }; tax_rate: number }
 
 const staffs = ref<Staff[]>([])
@@ -71,6 +71,17 @@ const validationErrors = ref({
   menu_id: '',
   customer_name: '',
   customer_phone: ''
+})
+
+// 🟢 担当スタッフが対応可能なメニューのみ表示
+const availableMenus = computed(() => {
+  if (!newReservation.value.staff_id) {
+    return menus.value // スタッフ未選択時は全メニュー表示
+  }
+  // 選択されたスタッフが対応可能なメニューのみ
+  return menus.value.filter(menu =>
+    menu.available_staff_ids?.includes(newReservation.value.staff_id)
+  )
 })
 
 // 共有の Audio インスタンス（フォールバック用）
@@ -1252,7 +1263,7 @@ const exportReservationsToExcel = async () => {
           <label>メニュー <span style="color: #e74c3c;">*</span></label>
           <select v-model="newReservation.menu_id" :class="{ 'input-error': validationErrors.menu_id }">
             <option value="" disabled>選択してください</option>
-            <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
+            <option v-for="m in availableMenus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
           </select>
           <span v-if="validationErrors.menu_id" class="error-message">{{ validationErrors.menu_id }}</span>
         </div>
@@ -1267,7 +1278,7 @@ const exportReservationsToExcel = async () => {
           <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
             :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
+          }}</span>
         </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>
