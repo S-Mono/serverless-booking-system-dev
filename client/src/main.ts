@@ -5,13 +5,11 @@ import App from './App.vue'
 import router from './router'
 
 // 🟢 vConsole for mobile debugging (LINEミニアプリでコンソールログを確認するため)
-// 開発・審査環境でのみ有効化
-if (import.meta.env.MODE !== 'production') {
-  import('vconsole').then(({ default: VConsole }) => {
-    new VConsole()
-    console.log('[vConsole] Enabled for debugging')
-  })
-}
+// 審査中は常に有効化（審査完了後に削除）
+import('vconsole').then(({ default: VConsole }) => {
+  new VConsole()
+  console.log('[vConsole] Enabled for debugging')
+})
 
 const app = createApp(App)
 

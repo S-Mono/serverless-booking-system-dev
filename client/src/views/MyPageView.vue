@@ -226,18 +226,23 @@ const cancelReservation = async (id: string) => {
     console.log('[MyPage] Reservation deleted successfully')
 
     // 🟢 2. 【追加】関連するメッセージを「キャンセル扱い」に更新
-    const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
-    const msgSnap = await getDocs(msgQ)
+    try {
+      const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
+      const msgSnap = await getDocs(msgQ)
 
-    // 関連するメッセージがあれば全て更新
-    const updatePromises = msgSnap.docs.map(d =>
-      updateDoc(d.ref, {
-        is_cancelled: true, // キャンセル済みフラグ
-        title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
-      })
-    )
-    await Promise.all(updatePromises)
-    console.log('[MyPage] Messages updated successfully')
+      // 関連するメッセージがあれば全て更新
+      const updatePromises = msgSnap.docs.map(d =>
+        updateDoc(d.ref, {
+          is_cancelled: true, // キャンセル済みフラグ
+          title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
+        })
+      )
+      await Promise.all(updatePromises)
+      console.log('[MyPage] Messages updated successfully')
+    } catch (msgError: any) {
+      // メッセージ更新に失敗しても予約キャンセルは成功とする
+      console.warn('[MyPage] Message update failed (non-critical):', msgError)
+    }
 
     dialog.alert('予約をキャンセルしました')
     reservations.value = reservations.value.filter(res => res.id !== id)
