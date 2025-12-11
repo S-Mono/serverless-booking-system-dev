@@ -91,10 +91,19 @@ const isSendingContact = ref(false)
 const fetchReservations = async (userId: string) => {
   loading.value = true
   try {
-    const q = query(collection(db, 'reservations'), where('customer_id', '==', userId))
+    // 本日00:00以降の予約のみ取得
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const q = query(
+      collection(db, 'reservations'),
+      where('customer_id', '==', userId),
+      where('start_at', '>=', Timestamp.fromDate(today)),
+      orderBy('start_at', 'asc')
+    )
     const querySnapshot = await getDocs(q)
     const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
-    reservations.value = results.sort((a, b) => a.start_at.seconds - b.start_at.seconds)
+    reservations.value = results
 
     // プロフィール取得 (UID優先)
     const docRef = doc(db, 'customers', userId)
@@ -405,7 +414,8 @@ const deleteAccount = async () => {
                   <div class="res-header">
                     <span class="date">{{ formatDate(res.start_at) }}</span>
                     <span v-if="res.status === 'confirmed'" class="status-badge confirmed">予約確定</span>
-                    <span v-else-if="res.status === 'pending'" class="status-badge pending">お店の確認待ち</span>
+                    <span v-else-if="res.status === 'pending'" class="status-badge pending">仮予約</span>
+                    <span v-else class="status-badge cancelled">キャンセル済</span>
                   </div>
                   <div class="res-body">
                     <div v-for="(item, index) in res.menu_items" :key="index" class="menu-item">
@@ -856,6 +866,10 @@ textarea:disabled {
 
 .status-badge.pending {
   background: #e67e22;
+}
+
+.status-badge.cancelled {
+  background: #95a5a6;
 }
 
 .res-body {
