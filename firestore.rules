@@ -45,7 +45,13 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // 📋 マスタデータ
+    // � ユーザーデータ (users)
+    match /users/{userId} {
+      allow read: if isAdmin();
+      allow read, write: if isOwner(userId);
+    }
+
+    // �📋 マスタデータ
     match /menus/{menuId} {
       allow read: if true;
       allow write: if isAdmin();

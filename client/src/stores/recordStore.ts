@@ -66,18 +66,101 @@ export const useRecordStore = defineStore('records', () => {
     }
   }
 
-  // 写真をアップロード（オリジナルのみ、サムネイルは自動生成）
+  // 画像をWebPに変換して圧縮
+  const convertToWebP = async (file: File, maxSizeKB: number = 100): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const reader = new FileReader()
+
+      reader.onload = (e) => {
+        img.src = e.target?.result as string
+      }
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+
+        if (!ctx) {
+          reject(new Error('Canvas context not available'))
+          return
+        }
+
+        // アスペクト比を保ちながらリサイズ（最大1920px）
+        let width = img.width
+        let height = img.height
+        const maxDimension = 1920
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = (height / width) * maxDimension
+            width = maxDimension
+          } else {
+            width = (width / height) * maxDimension
+            height = maxDimension
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+
+        // 画像を描画
+        ctx.drawImage(img, 0, 0, width, height)
+
+        // WebPに変換（品質を調整しながら目標サイズに）
+        const attemptConversion = (quality: number) => {
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Failed to convert image'))
+                return
+              }
+
+              const sizeKB = blob.size / 1024
+
+              // 目標サイズに収まった、または品質が最低値に達した
+              if (sizeKB <= maxSizeKB || quality <= 0.3) {
+                console.log(`WebP conversion complete: ${sizeKB.toFixed(1)}KB at quality ${quality}`)
+                resolve(blob)
+              } else {
+                // 品質を下げて再試行
+                attemptConversion(quality - 0.1)
+              }
+            },
+            'image/webp',
+            quality
+          )
+        }
+
+        // 初回は品質0.8で試行
+        attemptConversion(0.8)
+      }
+
+      img.onerror = () => {
+        reject(new Error('Failed to load image'))
+      }
+
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'))
+      }
+
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // 写真をアップロード（WebP変換＋圧縮）
   const uploadPhoto = async (
     file: File,
     customerId: string,
     recordId: string
   ): Promise<{ url: string; thumbnail_url: string }> => {
     try {
-      // ファイル名: timestamp + ランダム文字列
+      // WebPに変換＋圧縮
+      const webpBlob = await convertToWebP(file, 100)
+
+      // ファイル名: timestamp + ランダム文字列（WebP拡張子）
       const timestamp = new Date().getTime()
       const random = Math.random().toString(36).substring(7)
-      const extension = file.name.split('.').pop() || 'jpg'
-      const filename = `photo_${timestamp}_${random}.${extension}`
+      const filename = `photo_${timestamp}_${random}.webp`
       
       const photoRef = storageRef(
         storage,
@@ -85,31 +168,16 @@ export const useRecordStore = defineStore('records', () => {
       )
 
       // アップロード
-      await uploadBytes(photoRef, file)
+      await uploadBytes(photoRef, webpBlob, {
+        contentType: 'image/webp'
+      })
 
       // ダウンロードURL取得
       const url = await getDownloadURL(photoRef)
 
-      // サムネイルURL（Cloud Functionsで自動生成される）
-      const thumbFilename = filename.replace(/(\.\w+)$/, '_thumb$1')
-      const thumbRef = storageRef(
-        storage,
-        `customer_medical_records/${customerId}/${recordId}/${thumbFilename}`
-      )
-
-      // サムネイルが生成されるまで待つ（最大10秒）
-      let thumbnail_url = url // フォールバック
-      for (let i = 0; i < 10; i++) {
-        try {
-          thumbnail_url = await getDownloadURL(thumbRef)
-          break
-        } catch (e) {
-          // まだ生成されていない場合は1秒待つ
-          await new Promise(resolve => setTimeout(resolve, 1000))
-        }
-      }
-
-      return { url, thumbnail_url }
+      // サムネイルはCloud Functionsで非同期に生成されるため、
+      // アップロード時は元画像を使用し、後で更新する
+      return { url, thumbnail_url: url }
     } catch (e: any) {
       console.error('Failed to upload photo:', e)
       throw e
@@ -245,6 +313,66 @@ export const useRecordStore = defineStore('records', () => {
     }
   }
 
+  // サムネイルを非同期で更新（保存後やカルテ表示時に呼び出す）
+  const updateThumbnailsAsync = async (recordId: string) => {
+    try {
+      const record = records.value.find(r => r.id === recordId)
+      if (!record) return
+
+      let hasUpdates = false
+      const updatedPhotos = []
+
+      for (const photo of record.photos) {
+        // 元画像とサムネイルが同じ場合、サムネイルがまだ生成されていない可能性
+        if (photo.url === photo.thumbnail_url) {
+          try {
+            // URLからファイルパスを抽出
+            const urlMatch = photo.url.match(/customer_medical_records\/([^?]+)/)
+            if (urlMatch) {
+              const filePath = urlMatch[1]
+              const thumbPath = filePath.replace(/\.webp$/, '_thumb.webp')
+              const thumbRef = storageRef(storage, `customer_medical_records/${thumbPath}`)
+              
+              // サムネイルが存在するか確認
+              const thumbnail_url = await getDownloadURL(thumbRef)
+              console.log('✅ サムネイル更新:', filePath)
+              
+              updatedPhotos.push({
+                ...photo,
+                thumbnail_url
+              })
+              hasUpdates = true
+            } else {
+              updatedPhotos.push(photo)
+            }
+          } catch (e) {
+            // サムネイルがまだ生成されていない場合
+            console.log('⏳ サムネイル未生成:', photo.url)
+            updatedPhotos.push(photo)
+          }
+        } else {
+          updatedPhotos.push(photo)
+        }
+      }
+
+      // 更新があればFirestoreを更新
+      if (hasUpdates) {
+        await updateDoc(doc(db, 'customer_medical_records', recordId), {
+          photos: updatedPhotos
+        })
+
+        // ローカルの状態も更新
+        const index = records.value.findIndex(r => r.id === recordId)
+        if (index !== -1) {
+          records.value[index].photos = updatedPhotos as MedicalRecordPhoto[]
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to update thumbnails:', e)
+      // エラーは無視（サムネイルは必須ではない）
+    }
+  }
+
   return {
     records,
     loading,
@@ -253,6 +381,7 @@ export const useRecordStore = defineStore('records', () => {
     uploadPhoto,
     createRecord,
     updateRecord,
-    deleteRecord
+    deleteRecord,
+    updateThumbnailsAsync
   }
 })

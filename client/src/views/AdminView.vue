@@ -62,8 +62,12 @@ const isEditing = ref(false)
 const editingId = ref<string | null>(null)
 
 const newReservation = ref({
-  staff_id: '', start_time: '', customer_name: '', customer_phone: '', menu_id: '', note: ''
+  staff_id: '', start_time: '', customer_name: '', customer_phone: '', customer_id: '', menu_id: '', note: ''
 })
+
+// 顧客サジェスト用
+const suggestedCustomers = ref<Array<{ id: string; name_kana: string; phone_number: string }>>([])
+const showCustomerSuggestions = ref(false)
 
 // バリデーションエラー管理
 const validationErrors = ref({
@@ -500,9 +504,74 @@ const formatPhoneNumber = (value: string) => {
   return numbers
 }
 
-const handlePhoneInput = (event: Event) => {
+const handlePhoneInput = async (event: Event) => {
   const input = event.target as HTMLInputElement
   newReservation.value.customer_phone = formatPhoneNumber(input.value)
+  
+  // 電話番号から顧客を検索（10桁以上入力された場合）
+  const phoneDigits = newReservation.value.customer_phone.replace(/\D/g, '')
+  console.log('🔍 電話番号入力:', newReservation.value.customer_phone, '桁数:', phoneDigits.length)
+  
+  if (phoneDigits.length >= 10) {
+    try {
+      // ハイフン付きとハイフンなしの両方で検索
+      const phoneWithHyphen = newReservation.value.customer_phone
+      console.log('🔍 顧客検索開始... ハイフン付き:', phoneWithHyphen, 'ハイフンなし:', phoneDigits)
+      
+      // customersコレクションから検索（usersではなく）
+      let customersQuery = query(
+        collection(db, 'customers'),
+        where('phone_number', '==', phoneWithHyphen)
+      )
+      let customersSnapshot = await getDocs(customersQuery)
+      
+      console.log('🔍 ハイフン付き検索結果件数:', customersSnapshot.docs.length)
+      
+      // 見つからなければハイフンなしで検索
+      if (customersSnapshot.empty) {
+        console.log('🔍 ハイフンなしで再検索...')
+        customersQuery = query(
+          collection(db, 'customers'),
+          where('phone_number', '==', phoneDigits)
+        )
+        customersSnapshot = await getDocs(customersQuery)
+        console.log('🔍 ハイフンなし検索結果件数:', customersSnapshot.docs.length)
+      }
+      
+      if (!customersSnapshot.empty) {
+        suggestedCustomers.value = customersSnapshot.docs.map(doc => {
+          const data = doc.data()
+          console.log('👤 見つかった顧客:', data)
+          return {
+            id: doc.id,
+            name_kana: data.name_kana || data.name || '名前なし',
+            phone_number: data.phone_number || ''
+          }
+        })
+        showCustomerSuggestions.value = true
+        console.log('✅ サジェスト表示ON', suggestedCustomers.value)
+      } else {
+        console.log('❌ 該当する顧客が見つかりませんでした')
+        suggestedCustomers.value = []
+        showCustomerSuggestions.value = false
+      }
+    } catch (error) {
+      console.error('❌ 顧客検索エラー:', error)
+      suggestedCustomers.value = []
+      showCustomerSuggestions.value = false
+    }
+  } else {
+    suggestedCustomers.value = []
+    showCustomerSuggestions.value = false
+  }
+}
+
+const selectCustomer = (customer: { id: string; name_kana: string; phone_number: string }) => {
+  newReservation.value.customer_name = customer.name_kana
+  newReservation.value.customer_phone = customer.phone_number
+  newReservation.value.customer_id = customer.id
+  showCustomerSuggestions.value = false
+  console.log('✅ 顧客を選択:', customer.name_kana, '(ID:', customer.id, ')')
 }
 
 const submitReservation = async () => {
@@ -547,6 +616,7 @@ const submitReservation = async () => {
     staff_id: newReservation.value.staff_id,
     start_at: Timestamp.fromDate(startDate),
     end_at: Timestamp.fromDate(endDate),
+    customer_id: newReservation.value.customer_id || undefined,
     customer_name: newReservation.value.customer_name,
     customer_phone: newReservation.value.customer_phone,
     menu_items: [{ title: menu.title, duration: menu.duration_min, price: getTaxPrice(menu.price) }],
@@ -557,7 +627,24 @@ const submitReservation = async () => {
       await updateDoc(doc(db, 'reservations', editingId.value), payload)
       await dialog.alert('予約を更新しました')
     } else {
-      await addDoc(collection(db, 'reservations'), { ...payload, created_at: Timestamp.now() })
+      const docRef = await addDoc(collection(db, 'reservations'), { ...payload, created_at: Timestamp.now() })
+
+      // 顧客IDがあればメッセージ通知を送信
+      if (newReservation.value.customer_id) {
+        try {
+          const staffName = staffs.value.find(s => s.id === newReservation.value.staff_id)?.name || '担当者'
+          await addDoc(collection(db, 'messages'), {
+            user_id: newReservation.value.customer_id,
+            title: '✅ 予約が確定しました',
+            body: `${startDate.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })} ${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} からの「${menu.title}」の予約が確定されました。\n担当: ${staffName}`,
+            created_at: Timestamp.now(),
+            is_read: false
+          })
+          console.log('✅ 顧客に予約確定通知を送信しました')
+        } catch (msgError) {
+          console.error('メッセージ送信エラー:', msgError)
+        }
+      }
       await dialog.alert('予約を追加しました')
     }
     showModal.value = false
@@ -1275,17 +1362,27 @@ const exportReservationsToExcel = async () => {
           <span v-if="validationErrors.menu_id" class="error-message">{{ validationErrors.menu_id }}</span>
         </div>
         <div class="form-group">
+          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
+          <div class="input-with-suggestions">
+            <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
+              :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
+            <div v-if="showCustomerSuggestions && suggestedCustomers.length > 0" class="customer-suggestions">
+              <div class="suggestion-header">👥 登録済みの顧客</div>
+              <div v-for="customer in suggestedCustomers" :key="customer.id" class="suggestion-item"
+                @click="selectCustomer(customer)">
+                <span class="customer-name">👤 {{ customer.name_kana }}</span>
+                <span class="customer-phone">📞 {{ customer.phone_number }}</span>
+              </div>
+            </div>
+          </div>
+          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
+            }}</span>
+        </div>
+        <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>
           <input type="text" v-model="newReservation.customer_name"
             :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
           <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
-        </div>
-        <div class="form-group">
-          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
-          <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
-            :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
-          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-          }}</span>
         </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>
@@ -1315,7 +1412,8 @@ const exportReservationsToExcel = async () => {
           <div class="detail-row"><span class="label">顧客名:</span> {{ selectedReservation.customer_name || '名称未設定' }}
             <button v-if="selectedReservation.customer_id" class="link-text-btn" @click="goToCustomerDetail">➡
               顧客詳細へ</button>
-            <button v-if="selectedReservation.customer_id" class="link-text-btn link-records" @click="goToCustomerRecords">📋
+            <button v-if="selectedReservation.customer_id" class="link-text-btn link-records"
+              @click="goToCustomerRecords">📋
               カルテを見る</button>
           </div>
           <div class="detail-row"><span class="label">電話:</span> {{ selectedReservation.customer_phone || 'なし' }}</div>
@@ -2256,6 +2354,65 @@ textarea {
   font-size: 0.85rem;
   margin-top: 0.3rem;
   display: block;
+}
+
+/* 顧客サジェスト機能 */
+.input-with-suggestions {
+  position: relative;
+  width: 100%;
+}
+
+.customer-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.suggestion-header {
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #495057;
+}
+
+.suggestion-item {
+  padding: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f3f5;
+  transition: background-color 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background: #f1f8ff;
+}
+
+.customer-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+.customer-phone {
+  color: #7f8c8d;
+  font-size: 0.85rem;
 }
 
 @media (max-width: 768px) {

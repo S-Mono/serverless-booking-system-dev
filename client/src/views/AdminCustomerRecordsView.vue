@@ -1,63 +1,59 @@
 <template>
-  <div class="records-view">
-    <div class="header">
-      <button @click="goBack" class="btn-back">← 戻る</button>
-      <div class="customer-info">
-        <h1>📋 {{ customerName }} さんのカルテ</h1>
-        <p v-if="customerPhone" class="phone">📞 {{ customerPhone }}</p>
+  <div class="admin-container">
+    <header class="admin-header">
+      <div class="header-left">
+        <button @click="router.push('/admin')" class="back-btn">◀ ダッシュボード</button>
+        <button @click="router.push('/admin/customers')" class="back-btn">👥 顧客管理</button>
+        <h2>📋 {{ customerName }} さんのカルテ</h2>
       </div>
-    </div>
+      <div class="header-right">
+        <div class="customer-phone" v-if="customerPhone">📞 {{ customerPhone }}</div>
+      </div>
+    </header>
 
-    <div class="actions">
-      <button @click="navigateToCreate" class="btn-create">
-        ➕ カルテ作成
-      </button>
-    </div>
-
-    <!-- ローディング -->
-    <div v-if="recordStore.loading" class="loading">
-      カルテを読み込んでいます...
-    </div>
-
-    <!-- カルテ一覧 -->
-    <div v-else-if="recordStore.records.length > 0" class="records-list">
-      <div 
-        v-for="record in recordStore.records" 
-        :key="record.id" 
-        class="record-card"
-        @click="showDetail(record)"
-      >
-        <div class="record-header">
-          <span class="record-date">📅 {{ formatDate(record.recorded_at) }}</span>
-          <span class="record-staff">👤 {{ getStaffName(record.created_by) }}</span>
+    <main class="admin-body">
+      <div class="content-wrapper">
+        <div class="action-bar">
+          <button @click="navigateToCreate" class="add-btn">
+            ➕ カルテ作成
+          </button>
         </div>
-        <div class="record-content">
-          <p class="treatment-preview">{{ truncateText(record.treatment_content, 60) }}</p>
-          <div class="record-meta">
-            <span v-if="record.photos.length > 0" class="photo-count">
-              📷 {{ record.photos.length }}枚
-            </span>
-            <span v-if="record.updated_at" class="updated-badge">編集済</span>
+
+        <!-- ローディング -->
+        <div v-if="recordStore.loading" class="loading">
+          カルテを読み込んでいます...
+        </div>
+
+        <!-- カルテ一覧 -->
+        <div v-else-if="recordStore.records.length > 0" class="records-list">
+          <div v-for="record in recordStore.records" :key="record.id" class="record-card" @click="showDetail(record)">
+            <div class="record-header">
+              <span class="record-date">📅 {{ formatDate(record.recorded_at) }}</span>
+              <span class="record-staff">👤 {{ getStaffName(record.created_by) }}</span>
+            </div>
+            <div class="record-content">
+              <p class="treatment-preview">{{ truncateText(record.treatment_content, 60) }}</p>
+              <div class="record-meta">
+                <span v-if="record.photos.length > 0" class="photo-count">
+                  📷 {{ record.photos.length }}枚
+                </span>
+                <span v-if="record.updated_at" class="updated-badge">編集済</span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- 空の状態 -->
-    <div v-else class="empty-state">
-      <p>📋 まだカルテがありません</p>
-      <p class="hint">「カルテ作成」ボタンから新しいカルテを作成できます</p>
-    </div>
+        <!-- 空の状態 -->
+        <div v-else class="empty-state">
+          <p>📋 まだカルテがありません</p>
+          <p class="hint">「カルテ作成」ボタンから新しいカルテを作成できます</p>
+        </div>
+      </div>
+    </main>
 
     <!-- 詳細モーダル -->
-    <RecordDetailModal
-      :is-open="showDetailModal"
-      :record="selectedRecord!"
-      :staff-list="staffList"
-      @close="showDetailModal = false"
-      @edit="navigateToEdit"
-      @delete="handleDelete"
-    />
+    <RecordDetailModal v-if="showDetailModal && selectedRecord" :is-open="showDetailModal" :record="selectedRecord"
+      :staff-list="staffList" @close="showDetailModal = false" @edit="navigateToEdit" @delete="handleDelete" />
   </div>
 </template>
 
@@ -66,7 +62,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRecordStore, type MedicalRecord } from '../stores/recordStore'
 import { useDialogStore } from '../stores/dialog'
-import { db } from '../lib/firebase'
+import { db, auth } from '../lib/firebase'
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
 import RecordDetailModal from '../components/RecordDetailModal.vue'
 import type { Timestamp } from 'firebase/firestore'
@@ -103,8 +99,53 @@ onMounted(async () => {
       name: doc.data().name || '不明'
     }))
 
+    // デバッグ: スタッフ一覧を表示
+    console.log('👥 スタッフ一覧:', staffList.value)
+
+    // staffsコレクションが空の場合、現在のログインユーザーをスタッフとして追加
+    const currentUser = auth.currentUser
+    if (staffList.value.length === 0 && currentUser) {
+      console.log('⚠️ staffsコレクションが空です。現在のユーザーを追加します。')
+      // 現在のユーザーのメールアドレスを名前として使用
+      const displayName = currentUser.email?.split('@')[0] || 'Admin'
+      staffList.value.push({
+        id: currentUser.uid,
+        name: displayName
+      })
+    } else if (currentUser) {
+      // 現在のユーザーがstaffListに存在しない場合は追加
+      const exists = staffList.value.find(s => s.id === currentUser.uid)
+      if (!exists) {
+        const displayName = currentUser.email?.split('@')[0] || 'Admin'
+        staffList.value.push({
+          id: currentUser.uid,
+          name: displayName
+        })
+        console.log('➕ 現在のユーザーをスタッフリストに追加:', { id: currentUser.uid, name: displayName })
+      }
+    }
+
     // カルテを取得
     await recordStore.fetchRecordsByCustomer(customerId)
+
+    // デバッグ: カルテのcreated_byを表示
+    if (recordStore.records.length > 0) {
+      console.log('📋 カルテのcreated_by:', recordStore.records[0].created_by)
+    }
+
+    // カルテ取得後、各カルテのサムネイルを非同期で更新
+    // （Cloud Functionsで生成されたサムネイルがあれば更新）
+    setTimeout(() => {
+      if (recordStore.updateThumbnailsAsync) {
+        recordStore.records.forEach(record => {
+          try {
+            recordStore.updateThumbnailsAsync(record.id)
+          } catch (e) {
+            console.error('サムネイル更新エラー:', e)
+          }
+        })
+      }
+    }, 2000) // 2秒後に実行
   } catch (error: any) {
     console.error('Failed to load data:', error)
     dialog.alert('データの読み込みに失敗しました: ' + error.message)
@@ -167,90 +208,121 @@ const handleDelete = async (recordId: string) => {
     dialog.alert('削除に失敗しました: ' + error.message)
   }
 }
-
-// 戻る
-const goBack = () => {
-  if (fromPage === 'reservations') {
-    router.push('/admin')
-  } else if (fromPage === 'customers') {
-    router.push('/admin/customers')
-  } else {
-    router.back()
-  }
-}
 </script>
 
 <style scoped>
-.records-view {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
+.admin-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #f4f5f7;
+  overflow: hidden;
 }
 
-.header {
+.admin-header {
+  background: #2c3e50;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.admin-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.header-left {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+  gap: 1rem;
 }
 
-.btn-back {
-  background: #f0f0f0;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.back-btn {
+  background: transparent;
+  border: 1px solid #fff;
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 0.9rem;
   transition: background 0.2s;
 }
 
-.btn-back:hover {
-  background: #e0e0e0;
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.customer-info {
+.customer-phone {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.admin-body {
   flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  box-sizing: border-box;
 }
 
-.customer-info h1 {
-  margin: 0 0 5px 0;
-  font-size: 22px;
-  color: #333;
+.content-wrapper {
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
-.phone {
-  margin: 0;
-  color: #666;
-  font-size: 14px;
+.action-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
 }
 
-.actions {
-  margin-bottom: 20px;
-  text-align: right;
-}
-
-.btn-create {
-  background: #4CAF50;
+.add-btn {
+  background: #27ae60;
   color: white;
   border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
-  font-weight: bold;
+  font-size: 0.95rem;
   transition: background 0.2s;
 }
 
-.btn-create:hover {
-  background: #45a049;
+.add-btn:hover {
+  background: #229954;
 }
 
 .loading {
   text-align: center;
-  padding: 40px;
+  padding: 60px 20px;
   color: #666;
   font-size: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #999;
+}
+
+.empty-state p {
+  margin: 10px 0;
+  font-size: 16px;
+}
+
+.empty-state .hint {
+  font-size: 14px;
+  color: #bbb;
 }
 
 .records-list {
@@ -266,12 +338,12 @@ const goBack = () => {
   padding: 16px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .record-card:hover {
   border-color: #4CAF50;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
 }
 

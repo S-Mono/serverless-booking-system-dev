@@ -5,7 +5,7 @@
         <h2>📋 カルテ詳細</h2>
         <button @click="close" type="button" class="btn-close">×</button>
       </div>
-      
+
       <div class="modal-body">
         <!-- 監査ログ情報 -->
         <div class="audit-info">
@@ -37,12 +37,8 @@
         <div class="section">
           <h3>【施術後の写真】({{ record.photos.length }}枚)</h3>
           <div v-if="record.photos.length > 0" class="photos-grid">
-            <div 
-              v-for="(photo, index) in record.photos" 
-              :key="index" 
-              class="photo-item"
-            >
-              <div class="photo-preview" @click="openFullImage(photo.url)">
+            <div v-for="(photo, index) in record.photos" :key="index" class="photo-item">
+              <div class="photo-preview" @click="openPhotoViewer(photo.url, photo.notes)">
                 <img :src="photo.thumbnail_url || photo.url" :alt="`Photo ${index + 1}`" />
                 <span class="zoom-hint">🔍</span>
               </div>
@@ -72,12 +68,17 @@
       </div>
     </div>
   </div>
+
+  <!-- 写真拡大表示モーダル -->
+  <PhotoViewerModal :is-open="viewerOpen" :image-url="viewerImageUrl" :caption="viewerCaption"
+    @close="closePhotoViewer" />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import type { Timestamp } from 'firebase/firestore'
 import type { MedicalRecord } from '../stores/recordStore'
+import PhotoViewerModal from './PhotoViewerModal.vue'
 
 interface Staff {
   id: string
@@ -93,17 +94,32 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits(['close', 'edit', 'delete'])
 
+// 写真ビューアー用の状態
+const viewerOpen = ref(false)
+const viewerImageUrl = ref('')
+const viewerCaption = ref('')
+
 // 作成者の名前を取得
 const createdByName = computed(() => {
   const staff = props.staffList.find(s => s.id === props.record.created_by)
-  return staff?.name || '不明'
+  if (staff) {
+    return staff.name
+  }
+  // スタッフが見つからない場合、UIDの最初の8文字を表示
+  console.warn('⚠️ スタッフが見つかりません:', props.record.created_by)
+  return `不明 (${props.record.created_by?.substring(0, 8)}...)`
 })
 
 // 更新者の名前を取得
 const updatedByName = computed(() => {
   if (!props.record.updated_by) return ''
   const staff = props.staffList.find(s => s.id === props.record.updated_by)
-  return staff?.name || '不明'
+  if (staff) {
+    return staff.name
+  }
+  // スタッフが見つからない場合、UIDの最初の8文字を表示
+  console.warn('⚠️ スタッフが見つかりません:', props.record.updated_by)
+  return `不明 (${props.record.updated_by?.substring(0, 8)}...)`
 })
 
 // 日時フォーマット（詳細）
@@ -131,9 +147,16 @@ const formatDate = (timestamp: Timestamp | undefined) => {
   })
 }
 
-// フルサイズ画像を開く
-const openFullImage = (url: string) => {
-  window.open(url, '_blank')
+// 写真ビューアーを開く
+const openPhotoViewer = (url: string, notes?: string) => {
+  viewerImageUrl.value = url
+  viewerCaption.value = notes || ''
+  viewerOpen.value = true
+}
+
+// 写真ビューアーを閉じる
+const closePhotoViewer = () => {
+  viewerOpen.value = false
 }
 
 const close = () => emit('close')
@@ -287,7 +310,7 @@ hr {
   border-radius: 8px;
   overflow: hidden;
   background: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .photo-preview {

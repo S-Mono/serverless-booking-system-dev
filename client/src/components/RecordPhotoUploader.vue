@@ -19,8 +19,9 @@
         <!-- アップロード済み写真 -->
         <div v-if="photos.length > 0" class="photos-grid">
             <div v-for="(photo, index) in photos" :key="index" class="photo-card">
-                <div class="photo-preview" @click="openFullImage(photo.url)">
+                <div class="photo-preview" @click="openPhotoViewer(photo.url, photo.notes)">
                     <img :src="photo.thumbnail_url || photo.url" :alt="`Photo ${index + 1}`" />
+                    <div class="zoom-overlay">🔍</div>
                 </div>
                 <textarea v-model="photo.notes" placeholder="この写真についてのメモ" @input="onPhotoNotesChange"
                     class="photo-notes" />
@@ -32,23 +33,28 @@
             写真が追加されていません
         </div>
     </div>
+
+    <!-- 写真拡大表示モーダル -->
+    <PhotoViewerModal :is-open="viewerOpen" :image-url="viewerImageUrl" :caption="viewerCaption"
+        @close="closePhotoViewer" />
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRecordStore } from '../stores/recordStore'
 import { useDialogStore } from '../stores/dialog'
+import PhotoViewerModal from './PhotoViewerModal.vue'
 
 interface Photo {
-    url: string
-    thumbnail_url: string
+    url?: string
+    thumbnail_url?: string
+    file?: File
     notes?: string
 }
 
 interface Props {
     modelValue: Photo[]
     customerId: string
-    recordId: string
 }
 
 const props = defineProps<Props>()
@@ -62,6 +68,11 @@ const isUploading = ref(false)
 const uploadProgress = ref(0)
 const photos = ref<Photo[]>([...props.modelValue])
 
+// 写真ビューアー用の状態
+const viewerOpen = ref(false)
+const viewerImageUrl = ref('')
+const viewerCaption = ref('')
+
 // modelValue が外部から変更された時に同期
 watch(() => props.modelValue, (newVal) => {
     photos.value = [...newVal]
@@ -70,6 +81,18 @@ watch(() => props.modelValue, (newVal) => {
 // カメラ/ファイルピッカーを開く
 const openFileInput = () => {
     fileInput.value?.click()
+}
+
+// 写真ビューアーを開く
+const openPhotoViewer = (url: string, caption?: string) => {
+    viewerImageUrl.value = url
+    viewerCaption.value = caption || ''
+    viewerOpen.value = true
+}
+
+// 写真ビューアーを閉じる
+const closePhotoViewer = () => {
+    viewerOpen.value = false
 }
 
 // ファイル選択時の処理
@@ -95,16 +118,13 @@ const onFileSelected = async (event: Event) => {
                 continue
             }
 
-            // アップロード
-            const { url, thumbnail_url } = await recordStore.uploadPhoto(
-                file,
-                props.customerId,
-                props.recordId
-            )
+            // プレビュー用のURLを生成（アップロードは保存時に行う）
+            const previewUrl = URL.createObjectURL(file)
 
             photos.value.push({
-                url,
-                thumbnail_url,
+                file,
+                url: previewUrl, // プレビュー用
+                thumbnail_url: previewUrl, // プレビュー用
                 notes: ''
             })
 
@@ -118,8 +138,8 @@ const onFileSelected = async (event: Event) => {
         // 入力をリセット
         if (input) input.value = ''
     } catch (error: any) {
-        console.error('Failed to upload photos:', error)
-        dialog.alert('写真のアップロードに失敗しました: ' + error.message)
+        console.error('Failed to select photos:', error)
+        dialog.alert('写真の選択に失敗しました: ' + error.message)
     } finally {
         isUploading.value = false
         uploadProgress.value = 0
@@ -128,6 +148,11 @@ const onFileSelected = async (event: Event) => {
 
 // 写真を削除
 const removePhoto = (index: number) => {
+    const photo = photos.value[index]
+    // プレビューURL（ObjectURL）の場合はメモリ解放
+    if (photo.file && photo.url?.startsWith('blob:')) {
+        URL.revokeObjectURL(photo.url)
+    }
     photos.value.splice(index, 1)
     emit('update:modelValue', photos.value)
 }
@@ -135,11 +160,6 @@ const removePhoto = (index: number) => {
 // メモを更新
 const onPhotoNotesChange = () => {
     emit('update:modelValue', photos.value)
-}
-
-// フルサイズ画像を開く
-const openFullImage = (url: string) => {
-    window.open(url, '_blank')
 }
 </script>
 
@@ -215,10 +235,14 @@ const openFullImage = (url: string) => {
     cursor: pointer;
     position: relative;
     overflow: hidden;
+    transition: transform 0.2s;
 }
 
-.photo-preview::after {
-    content: '🔍';
+.photo-preview:hover {
+    transform: scale(1.02);
+}
+
+.zoom-overlay {
     position: absolute;
     top: 5px;
     right: 5px;
@@ -226,12 +250,13 @@ const openFullImage = (url: string) => {
     color: white;
     padding: 4px 8px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 14px;
     opacity: 0;
     transition: opacity 0.2s;
+    pointer-events: none;
 }
 
-.photo-preview:hover::after {
+.photo-preview:hover .zoom-overlay {
     opacity: 1;
 }
 

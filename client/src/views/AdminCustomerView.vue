@@ -145,8 +145,13 @@ const goToTrash = () => router.push('/admin/customers/trash')
 
 // 📋 カルテ画面へ遷移
 const goToCustomerRecords = (customerId: string) => {
+    console.log('📋 カルテ画面へ遷移:', customerId)
     showModal.value = false
-    router.push(`/admin/customer-records/${customerId}?from=customers`)
+    const path = `/admin/customer-records/${customerId}?from=customers`
+    console.log('遷移先パス:', path)
+    router.push(path).catch(err => {
+        console.error('ルーティングエラー:', err)
+    })
 }
 
 const formatDate = (ts: Timestamp) => {
@@ -238,7 +243,8 @@ onMounted(() => { fetchCustomers() })
                 <div class="modal-header-row">
                     <h3>{{ isEditing ? '顧客詳細・編集' : '新規顧客登録' }}</h3>
                     <div class="header-actions">
-                        <button v-if="isEditing" @click="goToCustomerRecords(editForm.id)" class="records-btn" type="button">📋 カルテ</button>
+                        <button v-if="isEditing" @click="goToCustomerRecords(editForm.id)" class="records-btn"
+                            type="button">📋 カルテ</button>
                         <button class="close-x-btn" @click="showModal = false">×</button>
                     </div>
                 </div>

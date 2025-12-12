@@ -14,38 +14,23 @@
       <!-- 施術内容 -->
       <div class="form-group">
         <label for="content" class="required">【施術内容】</label>
-        <textarea
-          id="content"
-          v-model="formData.content"
-          rows="6"
-          placeholder="例: オーダーメイドカット、カラー施術..."
-          required
-          class="form-textarea"
-        />
+        <textarea id="content" v-model="formData.content" rows="6" placeholder="例: オーダーメイドカット、カラー施術..." required
+          class="form-textarea" />
         <span v-if="errors.content" class="error">{{ errors.content }}</span>
       </div>
 
       <!-- 施術後の写真 -->
       <div class="form-group">
         <label class="required">【施術後の写真】</label>
-        <RecordPhotoUploader
-          v-model="formData.photos"
-          :customer-id="customerId"
-          :record-id="recordId"
-        />
+        <RecordPhotoUploader v-model="formData.photos" :customer-id="customerId" />
         <span v-if="errors.photos" class="error">{{ errors.photos }}</span>
       </div>
 
       <!-- 特記事項 -->
       <div class="form-group">
         <label for="notes">【特記事項 / 次回の提案】</label>
-        <textarea
-          id="notes"
-          v-model="formData.notes"
-          rows="4"
-          placeholder="例: 左側のボリュームアップを希望、次回はスタイリング剤でセット..."
-          class="form-textarea"
-        />
+        <textarea id="notes" v-model="formData.notes" rows="4" placeholder="例: 左側のボリュームアップを希望、次回はスタイリング剤でセット..."
+          class="form-textarea" />
       </div>
 
       <!-- ボタン -->
@@ -54,6 +39,7 @@
           キャンセル
         </button>
         <button type="submit" :disabled="isSaving" class="btn-save">
+          <span v-if="isSaving" class="spinner"></span>
           {{ isSaving ? '保存中...' : '💾 保存' }}
         </button>
       </div>
@@ -79,16 +65,17 @@ const customerId = route.params.customerId as string
 const recordIdParam = route.params.recordId as string | undefined
 const isEditing = computed(() => !!recordIdParam)
 
-// 新規作成時は一時的なIDを生成
-const recordId = ref(recordIdParam || `temp_${Date.now()}`)
+// recordIdは編集時のみ使用（新規作成時は不要）
+const recordId = ref(recordIdParam)
 
 const customerName = ref('')
 const customerPhone = ref('')
 const isSaving = ref(false)
 
 interface PhotoData {
-  url: string
-  thumbnail_url: string
+  url?: string
+  thumbnail_url?: string
+  file?: File
   notes?: string
 }
 
@@ -121,7 +108,7 @@ onMounted(async () => {
     if (isEditing.value && recordIdParam) {
       await recordStore.fetchRecordsByCustomer(customerId)
       const existing = recordStore.records.find(r => r.id === recordIdParam)
-      
+
       if (existing) {
         formData.value = {
           content: existing.treatment_content,
@@ -181,26 +168,77 @@ const handleSubmit = async () => {
   isSaving.value = true
 
   try {
+    // 写真アップロード処理
+    const uploadedPhotos: Array<{ url: string; thumbnail_url: string; notes?: string }> = []
+    for (const photo of formData.value.photos) {
+      if (photo.file) {
+        // 新規アップロード（Fileオブジェクトが存在する場合）
+        // 一時的なrecordIdを使用してアップロード
+        const tempRecordId = recordIdParam || `temp_${Date.now()}`
+        const { url, thumbnail_url } = await recordStore.uploadPhoto(
+          photo.file,
+          customerId,
+          tempRecordId
+        )
+        uploadedPhotos.push({
+          url,
+          thumbnail_url,
+          notes: photo.notes || ''
+        })
+      } else if (photo.url && photo.thumbnail_url) {
+        // 既存の写真（編集時）
+        uploadedPhotos.push({
+          url: photo.url,
+          thumbnail_url: photo.thumbnail_url,
+          notes: photo.notes || ''
+        })
+      }
+    }
+
     if (isEditing.value && recordIdParam) {
       // 更新
       await recordStore.updateRecord(
         recordIdParam,
         staffId,
         formData.value.content,
-        formData.value.photos,
+        uploadedPhotos,
         formData.value.notes
       )
       dialog.alert('カルテを更新しました')
+
+      // サムネイルを非同期で更新（バックグラウンド処理）
+      setTimeout(() => {
+        try {
+          if (recordStore.updateThumbnailsAsync) {
+            recordStore.updateThumbnailsAsync(recordIdParam)
+          }
+        } catch (e) {
+          console.error('サムネイル更新エラー:', e)
+        }
+      }, 3000) // 3秒後に実行（Cloud Functionsがサムネイル生成する時間を確保）
     } else {
       // 新規作成
-      await recordStore.createRecord(
+      const newRecord = await recordStore.createRecord(
         customerId,
         staffId,
         formData.value.content,
-        formData.value.photos,
+        uploadedPhotos,
         formData.value.notes
       )
       dialog.alert('カルテを作成しました')
+
+      // サムネイルを非同期で更新（バックグラウンド処理）
+      if (newRecord) {
+        setTimeout(() => {
+          try {
+            if (recordStore.updateThumbnailsAsync) {
+              recordStore.updateThumbnailsAsync(newRecord.id)
+            }
+          } catch (e) {
+            console.error('サムネイル更新エラー:', e)
+          }
+        }, 3000) // 3秒後に実行（Cloud Functionsがサムネイル生成する時間を確保）
+      }
     }
 
     // カルテ一覧に戻る
@@ -360,6 +398,24 @@ const goBack = () => {
 
 .btn-save:hover:not(:disabled) {
   background: #45a049;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn-save:disabled {
