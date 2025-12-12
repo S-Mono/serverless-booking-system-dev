@@ -129,7 +129,7 @@ onMounted(async () => {
     await recordStore.fetchRecordsByCustomer(customerId)
 
     // デバッグ: カルテのcreated_byを表示
-    if (recordStore.records.length > 0) {
+    if (recordStore.records.length > 0 && recordStore.records[0]) {
       console.log('📋 カルテのcreated_by:', recordStore.records[0].created_by)
     }
 
