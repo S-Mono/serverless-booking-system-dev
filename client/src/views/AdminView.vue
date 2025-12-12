@@ -507,26 +507,26 @@ const formatPhoneNumber = (value: string) => {
 const handlePhoneInput = async (event: Event) => {
   const input = event.target as HTMLInputElement
   newReservation.value.customer_phone = formatPhoneNumber(input.value)
-  
+
   // 電話番号から顧客を検索（10桁以上入力された場合）
   const phoneDigits = newReservation.value.customer_phone.replace(/\D/g, '')
   console.log('🔍 電話番号入力:', newReservation.value.customer_phone, '桁数:', phoneDigits.length)
-  
+
   if (phoneDigits.length >= 10) {
     try {
       // ハイフン付きとハイフンなしの両方で検索
       const phoneWithHyphen = newReservation.value.customer_phone
       console.log('🔍 顧客検索開始... ハイフン付き:', phoneWithHyphen, 'ハイフンなし:', phoneDigits)
-      
+
       // customersコレクションから検索（usersではなく）
       let customersQuery = query(
         collection(db, 'customers'),
         where('phone_number', '==', phoneWithHyphen)
       )
       let customersSnapshot = await getDocs(customersQuery)
-      
+
       console.log('🔍 ハイフン付き検索結果件数:', customersSnapshot.docs.length)
-      
+
       // 見つからなければハイフンなしで検索
       if (customersSnapshot.empty) {
         console.log('🔍 ハイフンなしで再検索...')
@@ -537,7 +537,7 @@ const handlePhoneInput = async (event: Event) => {
         customersSnapshot = await getDocs(customersQuery)
         console.log('🔍 ハイフンなし検索結果件数:', customersSnapshot.docs.length)
       }
-      
+
       if (!customersSnapshot.empty) {
         suggestedCustomers.value = customersSnapshot.docs.map(doc => {
           const data = doc.data()
@@ -1376,7 +1376,7 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
+          }}</span>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>
