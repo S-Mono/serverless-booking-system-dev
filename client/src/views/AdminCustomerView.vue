@@ -18,6 +18,7 @@ interface Customer {
     // true => 既存顧客, false => 新規顧客
     is_existing_customer?: boolean
     deleted_at?: Timestamp | null
+    auth_uid?: string // Firebase AuthのUID
 }
 
 interface ReservationHistory {

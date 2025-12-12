@@ -608,6 +608,27 @@ const submitReservation = async () => {
 
   if (hasError) return
 
+  // 🟢 未登録の電話番号の場合、顧客を自動登録
+  if (!newReservation.value.customer_id && !isEditing.value) {
+    try {
+      console.log('📝 新規顧客を登録します...')
+      const customerRef = await addDoc(collection(db, 'customers'), {
+        name: newReservation.value.customer_name,
+        name_kana: newReservation.value.customer_name, // カナは漢字と同じ値で登録
+        phone_number: newReservation.value.customer_phone,
+        memo: '電話予約にて自動登録',
+        preferred_category: 'barber',
+        is_existing_customer: true,
+        created_at: Timestamp.now()
+      })
+      newReservation.value.customer_id = customerRef.id
+      console.log('✅ 新規顧客を登録しました (ID:', customerRef.id, ')')
+    } catch (err) {
+      console.error('顧客登録エラー:', err)
+      // エラーが発生しても予約は継続
+    }
+  }
+
   const menu = menus.value.find(m => m.id === newReservation.value.menu_id)
   if (!menu) return
   const startDate = new Date(newReservation.value.start_time)
@@ -633,17 +654,22 @@ const submitReservation = async () => {
       if (newReservation.value.customer_id) {
         try {
           const staffName = staffs.value.find(s => s.id === newReservation.value.staff_id)?.name || '担当者'
+          const dateStr = startDate.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
           await addDoc(collection(db, 'messages'), {
-            user_id: newReservation.value.customer_id,
-            title: '✅ 予約が確定しました',
-            body: `${startDate.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })} ${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} からの「${menu.title}」の予約が確定されました。\n担当: ${staffName}`,
+            customer_id: newReservation.value.customer_id,
+            reservation_id: docRef.id,
+            title: '予約が確定しました',
+            body: `📞 お電話にてご予約いただいた内容が確定いたしました。\n\n日時: ${dateStr}\nメニュー: ${menu.title}\n担当: ${staffName}\n\nご来店を心よりお待ちしております。`,
             created_at: Timestamp.now(),
             is_read: false
           })
-          console.log('✅ 顧客に予約確定通知を送信しました')
+          console.log('✅ 顧客に予約確定通知を送信しました (customer_id:', newReservation.value.customer_id, ', reservation_id:', docRef.id, ')')
         } catch (msgError) {
           console.error('メッセージ送信エラー:', msgError)
         }
+      } else {
+        console.log('ℹ️ 顧客IDがないため、メッセージ通知はスキップします')
       }
       await dialog.alert('予約を追加しました')
     }
@@ -660,15 +686,23 @@ const deleteReservation = async (id: string) => {
     await deleteDoc(doc(db, 'reservations', id))
 
     // 🟢 2. 関連するメッセージを「キャンセル扱い」に更新
-    const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
-    const msgSnap = await getDocs(msgQ)
+    try {
+      const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
+      const msgSnap = await getDocs(msgQ)
 
-    msgSnap.forEach(async (d) => {
-      await updateDoc(d.ref, {
-        is_cancelled: true,
-        title: '【キャンセル済】' + d.data().title
-      })
-    })
+      const updatePromises = msgSnap.docs.map(d =>
+        updateDoc(d.ref, {
+          is_cancelled: true,
+          title: '【キャンセル済】' + d.data().title
+        }).catch((err: any) => {
+          console.warn('メッセージ更新エラー:', err.code || err.message)
+        })
+      )
+      await Promise.all(updatePromises)
+      console.log('✅ 関連するメッセージをキャンセル済みに更新しました')
+    } catch (msgError: any) {
+      console.warn('メッセージ更新失敗（非クリティカル）:', msgError.code || msgError.message)
+    }
 
     showDetailModal.value = false
     // 完了ダイアログは出さずにスッと閉じる（既存の挙動）
@@ -1377,7 +1411,7 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
+          }}</span>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>

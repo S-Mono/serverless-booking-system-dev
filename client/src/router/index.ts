@@ -6,6 +6,8 @@ import AdminView from '../views/AdminView.vue'
 import AdminSettingsView from '../views/AdminSettingsView.vue'
 import AdminMenuSettingsView from '../views/AdminMenuSettingsView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
+import ForgotPasswordView from '../views/ForgotPasswordView.vue'
+import ResetPasswordView from '../views/ResetPasswordView.vue'
 import { auth } from '../lib/firebase'
 import { getIdTokenResult, signOut } from 'firebase/auth'
 
@@ -23,6 +25,16 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: ForgotPasswordView
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: ResetPasswordView
+    },
     { 
       path: '/mypage', 
       name: 'mypage',

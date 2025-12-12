@@ -289,6 +289,10 @@ const handleAuth = async () => {
 
     <p v-if="message" class="message">{{ message }}</p>
 
+    <div v-if="isLoginMode" class="forgot-password">
+      <router-link to="/forgot-password">パスワードをお忘れの方</router-link>
+    </div>
+
     <p class="toggle-mode">
       {{ isLoginMode ? '初めての方はこちら' : 'すでにアカウントをお持ちの方' }}
       <a href="#" @click.prevent="isLoginMode = !isLoginMode">
@@ -319,6 +323,21 @@ h2 {
   color: #666;
   font-size: 0.8rem;
   margin-bottom: 1rem;
+}
+
+.forgot-password {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.forgot-password a {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.forgot-password a:hover {
+  text-decoration: underline;
 }
 
 .social-login {
