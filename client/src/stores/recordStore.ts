@@ -172,7 +172,7 @@ export const useRecordStore = defineStore('records', () => {
     recordId: string,
     staffId: string,
     content: string,
-    photos: Array<{ url: string; thumbnail_url: string; notes?: string }>,
+    photos: Array<{ url: string; thumbnail_url: string; notes?: string; uploaded_at?: Timestamp }>,
     notes?: string
   ) => {
     loading.value = true
@@ -197,7 +197,10 @@ export const useRecordStore = defineStore('records', () => {
       // ローカルリストを更新
       const index = records.value.findIndex(r => r.id === recordId)
       if (index !== -1) {
-        records.value[index] = { ...records.value[index], ...updateData }
+        const currentRecord = records.value[index]
+        if (currentRecord) {
+          records.value[index] = { ...currentRecord, ...updateData }
+        }
       }
     } catch (e: any) {
       console.error('Failed to update record:', e)

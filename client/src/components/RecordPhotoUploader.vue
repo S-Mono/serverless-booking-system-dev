@@ -97,6 +97,9 @@ const onFileSelected = async (event: Event) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       
+      // undefinedチェック
+      if (!file) continue
+      
       // ファイルサイズチェック (10MB制限)
       if (file.size > 10 * 1024 * 1024) {
         dialog.alert(`${file.name} は10MBを超えています。スキップします。`)
