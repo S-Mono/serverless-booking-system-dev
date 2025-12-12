@@ -138,10 +138,12 @@ onMounted(async () => {
     setTimeout(() => {
       if (recordStore.updateThumbnailsAsync) {
         recordStore.records.forEach(record => {
-          try {
-            recordStore.updateThumbnailsAsync(record.id)
-          } catch (e) {
-            console.error('サムネイル更新エラー:', e)
+          if (record?.id) {
+            try {
+              recordStore.updateThumbnailsAsync(record.id)
+            } catch (e) {
+              console.error('サムネイル更新エラー:', e)
+            }
           }
         })
       }
