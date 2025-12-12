@@ -327,8 +327,8 @@ export const useRecordStore = defineStore('records', () => {
         if (photo.url === photo.thumbnail_url) {
           try {
             // URLからファイルパスを抽出
-            const urlMatch = photo.url.match(/customer_medical_records\/([^?]+)/)
-            if (urlMatch) {
+            const urlMatch = photo.url?.match(/customer_medical_records\/([^?]+)/)
+            if (urlMatch && urlMatch[1]) {
               const filePath = urlMatch[1]
               const thumbPath = filePath.replace(/\.webp$/, '_thumb.webp')
               const thumbRef = storageRef(storage, `customer_medical_records/${thumbPath}`)
@@ -363,7 +363,7 @@ export const useRecordStore = defineStore('records', () => {
 
         // ローカルの状態も更新
         const index = records.value.findIndex(r => r.id === recordId)
-        if (index !== -1) {
+        if (index !== -1 && records.value[index]) {
           records.value[index].photos = updatedPhotos as MedicalRecordPhoto[]
         }
       }

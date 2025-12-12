@@ -771,6 +771,7 @@ const openEditModal = (res: Reservation) => {
     start_time: toLocalISOString(res.start_at.toDate()),
     customer_name: res.customer_name || '',
     customer_phone: res.customer_phone || '',
+    customer_id: res.customer_id || '',
     menu_id: matchedMenu ? matchedMenu.id : '',
     note: res.note || ''
   }
@@ -816,7 +817,7 @@ const onMouseUp = () => {
   newReservation.value = {
     staff_id: dragStaffId.value,
     start_time: toLocalISOString(dragStartTime.value),
-    customer_name: '', customer_phone: '', menu_id: '', note: ''
+    customer_name: '', customer_phone: '', customer_id: '', menu_id: '', note: ''
   }
   showModal.value = true; isDragging.value = false; dragStaffId.value = null
 }
@@ -1376,7 +1377,7 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-          }}</span>
+            }}</span>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>

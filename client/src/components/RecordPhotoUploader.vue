@@ -19,7 +19,7 @@
         <!-- アップロード済み写真 -->
         <div v-if="photos.length > 0" class="photos-grid">
             <div v-for="(photo, index) in photos" :key="index" class="photo-card">
-                <div class="photo-preview" @click="openPhotoViewer(photo.url, photo.notes)">
+                <div class="photo-preview" @click="openPhotoViewer(photo.url || '', photo.notes)">
                     <img :src="photo.thumbnail_url || photo.url" :alt="`Photo ${index + 1}`" />
                     <div class="zoom-overlay">🔍</div>
                 </div>
@@ -150,7 +150,7 @@ const onFileSelected = async (event: Event) => {
 const removePhoto = (index: number) => {
     const photo = photos.value[index]
     // プレビューURL（ObjectURL）の場合はメモリ解放
-    if (photo.file && photo.url?.startsWith('blob:')) {
+    if (photo?.file && photo.url?.startsWith('blob:')) {
         URL.revokeObjectURL(photo.url)
     }
     photos.value.splice(index, 1)
