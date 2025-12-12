@@ -144,3 +144,4 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 booking-system-dev-81786-firebase-adminsdk-fbsvc-8126f47cb0.json
+client/users.json
