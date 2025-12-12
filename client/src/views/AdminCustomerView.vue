@@ -143,6 +143,12 @@ const deleteCustomer = async (id: string) => {
 const goBack = () => router.push('/admin')
 const goToTrash = () => router.push('/admin/customers/trash')
 
+// 📋 カルテ画面へ遷移
+const goToCustomerRecords = (customerId: string) => {
+    showModal.value = false
+    router.push(`/admin/customer-records/${customerId}?from=customers`)
+}
+
 const formatDate = (ts: Timestamp) => {
     if (!ts) return ''
     const d = ts.toDate()
@@ -231,7 +237,10 @@ onMounted(() => { fetchCustomers() })
             <div class="modal-content">
                 <div class="modal-header-row">
                     <h3>{{ isEditing ? '顧客詳細・編集' : '新規顧客登録' }}</h3>
-                    <button class="close-x-btn" @click="showModal = false">×</button>
+                    <div class="header-actions">
+                        <button v-if="isEditing" @click="goToCustomerRecords(editForm.id)" class="records-btn" type="button">📋 カルテ</button>
+                        <button class="close-x-btn" @click="showModal = false">×</button>
+                    </div>
                 </div>
                 <div class="modal-body">
                     <div class="form-section">
@@ -488,6 +497,28 @@ onMounted(() => { fetchCustomers() })
     margin: 0;
     font-size: 1.2rem;
     color: #333;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.records-btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background 0.2s;
+}
+
+.records-btn:hover {
+    background: #45a049;
 }
 
 .close-x-btn {

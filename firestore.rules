@@ -63,5 +63,11 @@ service cloud.firestore {
     match /admin_tokens/{tokenId} {
       allow read, write: if isAdmin();
     }
+
+    // カルテ
+    match /customer_medical_records/{document=**} {
+      allow read, create, update, delete: if request.auth != null && 
+      request.auth.token.is_admin == true;
+    }
   }
 }

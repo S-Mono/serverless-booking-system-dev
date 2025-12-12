@@ -95,6 +95,27 @@ const router = createRouter({
       name: 'admin-sales',
       component: () => import('../views/AdminSalesView.vue'),
       meta: { requiresAdmin: true }
+    },
+    // 👇 追加: 顧客カルテ一覧画面
+    {
+      path: '/admin/customer-records/:customerId',
+      name: 'admin-customer-records',
+      component: () => import('../views/AdminCustomerRecordsView.vue'),
+      meta: { requiresAdmin: true }
+    },
+    // 👇 追加: カルテ新規作成画面
+    {
+      path: '/admin/customer-records/:customerId/edit',
+      name: 'admin-record-create',
+      component: () => import('../views/AdminRecordEditorView.vue'),
+      meta: { requiresAdmin: true }
+    },
+    // 👇 追加: カルテ編集画面
+    {
+      path: '/admin/customer-records/:customerId/edit/:recordId',
+      name: 'admin-record-edit',
+      component: () => import('../views/AdminRecordEditorView.vue'),
+      meta: { requiresAdmin: true }
     }
   ]
 })
