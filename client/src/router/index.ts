@@ -147,10 +147,10 @@ router.beforeEach(async (to, from, next) => {
       return next('/admin-login')
     }
 
-    // トークンのカスタムクレームに admin フラグがあるかを確認
+    // トークンのカスタムクレームに is_admin フラグがあるかを確認
     try {
       const idTokenResult = await getIdTokenResult(user)
-      if (!idTokenResult.claims || !idTokenResult.claims.admin) {
+      if (!idTokenResult.claims || !idTokenResult.claims.is_admin) {
         // 管理者権限がないならアクセス拒否
         console.warn('管理者権限がありません')
         return next('/admin-login')

@@ -16,7 +16,7 @@ export const useUserStore = defineStore('user', () =>
     try {
       const { getIdTokenResult } = await import('firebase/auth')
       const tokenResult = await getIdTokenResult(user.value)
-      isAdmin.value = Boolean(tokenResult.claims?.admin)
+      isAdmin.value = Boolean(tokenResult.claims?.is_admin)
     } catch (e) {
       console.error('admin claim fetch failed', e)
       isAdmin.value = false
