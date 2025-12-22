@@ -39,6 +39,27 @@ npm run dev
 
 ```sh
 npm run build
+```
+
+### Build for Review Environment (LINE Mini App審査用)
+
+審査環境用にビルドする場合は、`.env.review`ファイルを使用します：
+
+```sh
+# 審査環境用の環境変数を使用してビルド
+cp .env.review .env
+npm run build
+```
+
+または、直接環境変数を指定してビルド：
+
+```sh
+VITE_MINI_APP_ID=2000207130-jq8XNWKo npm run build
+```
+
+ビルド後、`dist`フォルダの内容をVercelにデプロイしてください。
+
+**重要:** 本番環境へのデプロイ前に、必ず`.env`ファイルを元に戻してください。
 
 ## Admin access / developer accounts
 

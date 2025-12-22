@@ -43,6 +43,8 @@ service cloud.firestore {
     match /customers/{userId} {
       allow read, write: if isAdmin();
       allow read, write: if isOwner(userId);
+      // 電話番号でのログイン時に顧客を検索できるよう許可（認証前のクエリを許可）
+      allow get, list: if true;
     }
 
     // � ユーザーデータ (users)

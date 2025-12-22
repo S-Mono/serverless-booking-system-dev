@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { db, auth } from '../lib/firebase'
-import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc } from 'firebase/firestore'
-import { onAuthStateChanged, signOut, type Unsubscribe } from 'firebase/auth'
+import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc, addDoc } from 'firebase/firestore'
+import { onAuthStateChanged, signOut, type Unsubscribe, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
@@ -30,6 +30,12 @@ const preferredCategory = ref('barber')
 const isSavingProfile = ref(false)
 const isProfileOpen = ref(false) // お客様情報の開閉状態
 const isCancellingReservation = ref(false) // 予約キャンセル中フラグ
+const isLineUser = ref(false) // LINEログインユーザーかどうか
+const showPasswordChangeDialog = ref(false) // パスワード変更ダイアログ表示フラグ
+const currentPassword = ref('') // 現在のパスワード
+const newPassword = ref('') // 新しいパスワード
+const confirmPassword = ref('') // 新しいパスワード（確認）
+const isChangingPassword = ref(false) // パスワード変更中フラグ
 
 // 電話番号フォーマット（ハイフン自動補完）
 const formatPhoneNumber = (value: string) => {
@@ -119,6 +125,7 @@ const fetchReservations = async (userId: string) => {
       nameKana.value = data.name_kana || ''
       phoneNumber.value = data.phone_number || ''
       preferredCategory.value = data.preferred_category || 'barber'
+      isLineUser.value = data.provider === 'line' // LINEユーザーかチェック
       // 未入力なら開く、入力済みなら閉じる
       isProfileOpen.value = !nameKana.value || !phoneNumber.value
     } else {
@@ -191,10 +198,13 @@ const saveProfile = async () => {
 
   isSavingProfile.value = true
   try {
+    // 電話番号からハイフンを除去して保存
+    const cleanPhoneNumber = phoneNumber.value.replace(/[^0-9]/g, '')
+
     await setDoc(doc(db, 'customers', currentUser.value.uid), {
       name_kanji: nameKanji.value,
       name_kana: nameKana.value,
-      phone_number: phoneNumber.value,
+      phone_number: cleanPhoneNumber,
       preferred_category: preferredCategory.value,
       is_existing_customer: true,
       updated_at: Timestamp.now()
@@ -413,6 +423,81 @@ const deleteAccount = async () => {
   }
 }
 
+// パスワード変更ダイアログを開く
+const openPasswordChangeDialog = () => {
+  currentPassword.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
+  showPasswordChangeDialog.value = true
+}
+
+// パスワードを変更
+const changePassword = async () => {
+  // バリデーション
+  if (!currentPassword.value) {
+    dialog.alert('現在のパスワードを入力してください', '入力エラー')
+    return
+  }
+
+  if (!newPassword.value) {
+    dialog.alert('新しいパスワードを入力してください', '入力エラー')
+    return
+  }
+
+  if (newPassword.value.length < 6) {
+    dialog.alert('新しいパスワードは6文字以上で入力してください', '入力エラー')
+    return
+  }
+
+  if (newPassword.value !== confirmPassword.value) {
+    dialog.alert('新しいパスワードが一致しません', '入力エラー')
+    return
+  }
+
+  if (currentPassword.value === newPassword.value) {
+    dialog.alert('新しいパスワードは現在のパスワードと異なるものを設定してください', '入力エラー')
+    return
+  }
+
+  isChangingPassword.value = true
+
+  try {
+    const user = auth.currentUser
+    if (!user || !user.email) {
+      throw new Error('ユーザー情報が取得できません')
+    }
+
+    // 現在のパスワードで再認証
+    const credential = EmailAuthProvider.credential(user.email, currentPassword.value)
+    await reauthenticateWithCredential(user, credential)
+
+    // パスワードを更新
+    await updatePassword(user, newPassword.value)
+
+    console.log('✅ パスワード変更成功')
+
+    showPasswordChangeDialog.value = false
+    await dialog.alert(
+      'パスワードを変更しました。',
+      '変更完了'
+    )
+
+    // フォームをクリア
+    currentPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+  } catch (error: any) {
+    console.error('パスワード変更エラー:', error)
+    if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      dialog.alert('現在のパスワードが正しくありません', 'エラー')
+    } else {
+      dialog.alert(`エラーが発生しました: ${error.message}`, 'エラー')
+    }
+  } finally {
+    isChangingPassword.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -474,6 +559,11 @@ const deleteAccount = async () => {
 
               <button @click="saveProfile" :disabled="isSavingProfile" class="save-btn">
                 {{ isSavingProfile ? '保存中...' : '保存する' }}
+              </button>
+
+              <!-- パスワード変更ボタン（LINEユーザー以外） -->
+              <button v-if="!isLineUser" @click="openPasswordChangeDialog" class="password-reset-btn">
+                🔐 パスワードを変更
               </button>
             </div>
           </div>
@@ -581,6 +671,47 @@ const deleteAccount = async () => {
         </aside>
       </div>
     </div>
+
+    <!-- パスワード変更ダイアログ -->
+    <Teleport to="body">
+      <div v-if="showPasswordChangeDialog" class="modal-overlay" @click.self="showPasswordChangeDialog = false">
+        <div class="modal-content password-change-modal">
+          <div class="modal-header">
+            <h3>パスワードの変更</h3>
+            <button class="close-btn" @click="showPasswordChangeDialog = false">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-description">
+              パスワードを変更します。<br>
+              現在のパスワードと新しいパスワードを入力してください。
+            </p>
+            <div class="form-group">
+              <label>現在のパスワード *</label>
+              <input type="password" v-model="currentPassword" placeholder="現在のパスワードを入力"
+                :disabled="isChangingPassword" />
+            </div>
+            <div class="form-group">
+              <label>新しいパスワード *</label>
+              <input type="password" v-model="newPassword" placeholder="新しいパスワードを入力（6文字以上）"
+                :disabled="isChangingPassword" />
+            </div>
+            <div class="form-group">
+              <label>新しいパスワード（確認） *</label>
+              <input type="password" v-model="confirmPassword" placeholder="新しいパスワードを再入力"
+                :disabled="isChangingPassword" />
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button @click="showPasswordChangeDialog = false" class="cancel-btn-modal" :disabled="isChangingPassword">
+              キャンセル
+            </button>
+            <button @click="changePassword" class="submit-btn" :disabled="isChangingPassword">
+              {{ isChangingPassword ? '変更中...' : '変更する' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1041,6 +1172,182 @@ textarea:disabled {
 .delete-account-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+.password-reset-btn {
+  width: 100%;
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 10px;
+  transition: all 0.3s;
+}
+
+.password-reset-btn:hover {
+  background: #5568d3;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.password-reset-modal {
+  max-width: 450px;
+}
+
+.password-change-modal {
+  max-width: 500px;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #333;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.modal-body .form-group {
+  margin-bottom: 1.25rem;
+}
+
+.modal-body .form-group label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.modal-body .form-group input[type="password"],
+.modal-body .form-group input[type="email"],
+.modal-body .form-group input[type="text"] {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.modal-body .form-group input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.modal-body .form-group input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.cancel-btn-modal {
+  background: white;
+  border: 1px solid #ddd;
+  color: #666;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.cancel-btn-modal:hover {
+  background: #f5f5f5;
+}
+
+.cancel-btn-modal:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submit-btn {
+  background: #4CAF50;
+  border: none;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.submit-btn:hover {
+  background: #45a049;
+}
+
+.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-description {
+  color: #666;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 20px;
 }
 
 .res-footer {

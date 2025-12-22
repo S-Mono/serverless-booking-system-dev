@@ -122,22 +122,26 @@ const submitReset = async () => {
         const resetSnapshot = await getDocs(resetQuery)
 
         if (!resetSnapshot.empty && resetSnapshot.docs[0]) {
-
-            console.log('✅ パスワード更新成功')
-
-            await dialog.alert(
-                'パスワードを更新しました。\n新しいパスワードでログインしてください。',
-                '更新完了'
-            )
-
-            router.push('/login')
-        } catch (error: any) {
-            console.error('パスワード更新エラー:', error)
-            message.value = `エラーが発生しました: ${error.message}`
-        } finally {
-            loading.value = false
+            await updateDoc(resetSnapshot.docs[0].ref, {
+                used: true
+            })
         }
+
+        console.log('✅ パスワード更新成功')
+
+        await dialog.alert(
+            'パスワードを更新しました。\n新しいパスワードでログインしてください。',
+            '更新完了'
+        )
+
+        router.push('/login')
+    } catch (error: any) {
+        console.error('パスワード更新エラー:', error)
+        message.value = `エラーが発生しました: ${error.message}`
+    } finally {
+        loading.value = false
     }
+}
 </script>
 
 <template>
