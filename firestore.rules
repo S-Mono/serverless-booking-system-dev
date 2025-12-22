@@ -84,5 +84,11 @@ service cloud.firestore {
       allow create: if true; // 誰でも作成可能（パスワード忘れ機能用）
       allow update: if true; // トークン使用済みフラグの更新用
     }
+
+    // 🐛 エラーログ (error_logs) - 審査時のエラー収集用
+    match /error_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if true;  // 誰でも書き込み可能（エラー発生時に記録するため）
+    }
   }
 }
