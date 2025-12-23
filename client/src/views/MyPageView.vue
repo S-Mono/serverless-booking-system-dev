@@ -121,21 +121,32 @@ const fetchReservations = async (userId: string) => {
 
     if (docSnap.exists()) {
       const data = docSnap.data()
+      console.log('[MyPage] Customer data loaded:', {
+        name_kanji: data.name_kanji,
+        name_kana: data.name_kana,
+        phone_number: data.phone_number,
+        provider: data.provider
+      })
       nameKanji.value = data.name_kanji || ''
       nameKana.value = data.name_kana || ''
       phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''
+      console.log('[MyPage] Phone number formatted:', phoneNumber.value)
       preferredCategory.value = data.preferred_category || 'barber'
       isLineUser.value = data.provider === 'line' // LINEユーザーかチェック
       // 未入力なら開く、入力済みなら閉じる
       isProfileOpen.value = !nameKana.value || !phoneNumber.value
     } else {
+      console.log('[MyPage] No customer document found for UID, trying phone lookup')
       // なければ電話番号で名寄せトライ
       const phone = currentUser.value.email?.split('@')[0]
+      console.log('[MyPage] Phone from email:', phone)
       if (phone) {
         const custQ = query(collection(db, 'customers'), where('phone_number', '==', phone))
         const custSnap = await getDocs(custQ)
+        console.log('[MyPage] Phone lookup result:', custSnap.size, 'documents')
         if (!custSnap.empty) {
           const data = custSnap.docs[0]!.data()
+          console.log('[MyPage] Customer data from phone lookup:', data)
           nameKanji.value = data.name_kanji || ''
           nameKana.value = data.name_kana || ''
           phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''

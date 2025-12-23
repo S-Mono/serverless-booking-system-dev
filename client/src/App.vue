@@ -29,8 +29,8 @@ const fetchCustomerName = async (user: any) => {
 
     if (docSnap.exists()) {
       const data = docSnap.data()
-      // 漢字名があればそれを優先、なければカナを使用
-      const name = data.name_kanji || data.name_kana || 'ゲスト'
+      // 漢字名があればそれを優先、なければカナを使用（空文字も許可）
+      const name = data.name_kanji || data.name_kana || ''
       userStore.setCustomerName(name)
       return
     }
@@ -42,16 +42,16 @@ const fetchCustomerName = async (user: any) => {
       const snapshot = await getDocs(q)
       if (!snapshot.empty) {
         const data = snapshot.docs[0]!.data()
-        const name = data.name_kanji || data.name_kana || 'ゲスト'
+        const name = data.name_kanji || data.name_kana || ''
         userStore.setCustomerName(name)
         return
       }
     }
 
-    userStore.setCustomerName('ゲスト')
+    userStore.setCustomerName('')
   } catch (e) {
     console.error('顧客名取得エラー:', e)
-    userStore.setCustomerName('ゲスト')
+    userStore.setCustomerName('')
   }
 }
 
@@ -164,7 +164,7 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
 
         <nav class="nav-menu" :class="{ open: isMenuOpen }">
           <div v-if="userStore.user && !isAdminPage" class="menu-group">
-            <span class="user-welcome">ようこそ {{ userStore.customerName || 'ゲスト' }} 様</span>
+            <span class="user-welcome">ようこそ {{ userStore.customerName || 'ゲスト' }}様</span>
             <button class="nav-item bell-menu-item" @click="goToMessages">
               お知らせ <span v-if="unreadCount > 0" class="badge-inline">{{ unreadCount }}</span>
             </button>

@@ -60,13 +60,20 @@ const handlePhoneInput = (event: Event) => {
 
 const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string, nameKanji?: string) => {
   try {
+    console.log('[createCustomerData] Starting with provider:', provider)
+    console.log('[createCustomerData] User email:', user.email)
+
     const docRef = doc(db, 'customers', user.uid)
     const docSnap = await getDoc(docRef)
+
     if (!docSnap.exists()) {
+      const phoneNumberValue = provider === 'phone' ? user.email?.split('@')[0] || '' : ''
+      console.log('[createCustomerData] Creating new customer with phone_number:', phoneNumberValue)
+
       await setDoc(docRef, {
         name_kanji: nameKanji || '',
-        name_kana: name || user.displayName || 'ゲスト',
-        phone_number: provider === 'phone' ? user.email?.split('@')[0] : '',
+        name_kana: name || user.displayName || '',
+        phone_number: phoneNumberValue,
         email: user.email || '',
         is_existing_customer: false,
         preferred_category: 'barber',
@@ -74,8 +81,13 @@ const createCustomerData = async (user: User, provider: 'google' | 'line' | 'pho
         created_at: Timestamp.now(),
         updated_at: Timestamp.now()
       })
+      console.log('[createCustomerData] Customer document created successfully')
+    } else {
+      console.log('[createCustomerData] Customer document already exists')
     }
-  } catch (e) { console.error('顧客データ作成エラー:', e) }
+  } catch (e) {
+    console.error('顧客データ作成エラー:', e)
+  }
 }
 
 onMounted(async () => {
