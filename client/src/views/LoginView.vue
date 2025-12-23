@@ -302,7 +302,13 @@ const handleAuth = async () => {
       } else if (snapshot.size === 1) {
         // 1件のみの場合、直接認証
         const customer = snapshot.docs[0]
-        const customerData = customer.data()
+        const customerData = customer?.data()
+
+        if (!customer || !customerData) {
+          message.value = 'ログインエラー: 顧客データが見つかりません'
+          loading.value = false
+          return
+        }
 
         // providerに基づいてFirebase Authのメールアドレスを決定
         let firebaseEmail: string

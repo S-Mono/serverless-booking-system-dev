@@ -152,6 +152,24 @@ const deleteCustomer = async (id: string) => {
 const goBack = () => router.push('/admin')
 const goToTrash = () => router.push('/admin/customers/trash')
 
+// 電話番号フォーマット（ハイフン自動補完）
+const formatPhoneNumber = (value: string) => {
+    const numbers = value.replace(/[^0-9]/g, '')
+    if (numbers.length <= 3) return numbers
+    if (numbers.length <= 6) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+    if (numbers.length === 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+    if (numbers.length === 8) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
+    if (numbers.length === 9) return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+    if (numbers.length === 10) {
+        if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
+            return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
+        }
+        return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+    }
+    if (numbers.length >= 11) return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+    return numbers
+}
+
 // 📋 カルテ画面へ遷移
 const goToRecords = (customerId: string) => {
     console.log('📋 カルテ画面へ遷移:', customerId)
@@ -162,6 +180,9 @@ const goToRecords = (customerId: string) => {
         console.error('ルーティングエラー:', err)
     })
 }
+
+// goToCustomerRecordsはgoToRecordsのエイリアス
+const goToCustomerRecords = goToRecords
 
 const formatDate = (ts: Timestamp) => {
     if (!ts) return ''
