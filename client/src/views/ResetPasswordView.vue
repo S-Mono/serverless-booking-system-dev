@@ -2,13 +2,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { auth, db } from '../lib/firebase'
-import { signInWithEmailAndPassword, updatePassword } from 'firebase/auth'
-import { collection, query, where, getDocs, updateDoc, doc, orderBy, limit } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 
 const router = useRouter()
 const route = useRoute()
 const dialog = useDialogStore()
+const functions = getFunctions(undefined, 'asia-northeast1')
 
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -94,40 +95,16 @@ const submitReset = async () => {
     message.value = ''
 
     try {
-        const phoneDigits = customerPhone.value.replace(/\D/g, '')
-        const firebaseEmail = `${phoneDigits}${PSEUDO_DOMAIN}`
-
-        // 一時的にログインして パスワードを変更
-        let tempUser
-        try {
-            // 既存のパスワードでログインを試みる（パスワードが設定されている場合）
-            const userCred = await signInWithEmailAndPassword(auth, firebaseEmail, 'temp_password')
-            tempUser = userCred.user
-        } catch (error: any) {
-            // ユーザーが存在しない場合は、顧客データから再構築が必要
-            // この場合、Cloud Functionsで処理するのが望ましい
-            console.error('ユーザー認証エラー:', error)
-            message.value = 'パスワードリセットに失敗しました。管理者にお問い合わせください。'
-            loading.value = false
-            return
-        }
-
-        // パスワードを更新
-        await updatePassword(tempUser, newPassword.value)
-
-        // トークンを使用済みにする
         const token = route.query.token as string
-        const resetQuery = query(
-            collection(db, 'password_reset_requests'),
-            where('token', '==', token)
-        )
-        const resetSnapshot = await getDocs(resetQuery)
 
-        if (!resetSnapshot.empty && resetSnapshot.docs[0]) {
-            await updateDoc(resetSnapshot.docs[0].ref, {
-                used: true
-            })
-        }
+        console.log('🔄 パスワードリセット開始')
+
+        // Cloud Functionを呼び出してパスワードをリセット
+        const resetPasswordWithToken = httpsCallable(functions, 'resetPasswordWithToken')
+        await resetPasswordWithToken({
+            token: token,
+            newPassword: newPassword.value
+        })
 
         console.log('✅ パスワード更新成功')
 
@@ -139,7 +116,18 @@ const submitReset = async () => {
         router.push('/login')
     } catch (error: any) {
         console.error('パスワード更新エラー:', error)
-        message.value = `エラーが発生しました: ${error.message}`
+
+        // エラーメッセージをユーザーフレンドリーに
+        let errorMessage = 'パスワードの更新に失敗しました。'
+        if (error.code === 'functions/not-found') {
+            errorMessage = 'このリンクは無効または既に使用されています。'
+        } else if (error.code === 'functions/deadline-exceeded') {
+            errorMessage = 'このリンクの有効期限が切れています。'
+        } else if (error.code === 'functions/invalid-argument') {
+            errorMessage = error.message || 'パスワードは6文字以上で入力してください。'
+        }
+
+        message.value = errorMessage
     } finally {
         loading.value = false
     }

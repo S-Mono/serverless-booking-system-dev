@@ -773,3 +773,88 @@ export const adminUpdatePassword = onCall(
     }
   }
 );
+
+/**
+ * トークンを使用してパスワードをリセット
+ */
+export const resetPasswordWithToken = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const {token, newPassword} = request.data;
+
+    if (!token || !newPassword) {
+      throw new HttpsError(
+        "invalid-argument",
+        "token and newPassword are required"
+      );
+    }
+
+    if (newPassword.length < 6) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Password must be at least 6 characters"
+      );
+    }
+
+    try {
+      // トークンを検証
+      const resetQuery = await admin
+        .firestore()
+        .collection("password_reset_requests")
+        .where("token", "==", token)
+        .where("used", "==", false)
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .get();
+
+      if (resetQuery.empty) {
+        throw new HttpsError(
+          "not-found",
+          "Invalid or already used token"
+        );
+      }
+
+      const resetDoc = resetQuery.docs[0];
+      const resetData = resetDoc.data();
+
+      // 有効期限チェック
+      const expiresAt = resetData.expires_at?.toDate();
+      if (!expiresAt || expiresAt < new Date()) {
+        throw new HttpsError("deadline-exceeded", "Token has expired");
+      }
+
+      const customerId = resetData.customer_id;
+
+      // パスワードを更新
+      await admin.auth().updateUser(customerId, {
+        password: newPassword,
+      });
+
+      // トークンを使用済みにする
+      await resetDoc.ref.update({
+        used: true,
+        used_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      logger.info("Password reset successful", {
+        customerId,
+        token,
+      });
+
+      return {success: true};
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      const errorObj = error as {message?: string};
+      logger.error("Password reset failed", {
+        error: errorObj.message,
+        token,
+      });
+      throw new HttpsError("internal", "Failed to reset password");
+    }
+  }
+);
