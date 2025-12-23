@@ -123,7 +123,7 @@ const fetchReservations = async (userId: string) => {
       const data = docSnap.data()
       nameKanji.value = data.name_kanji || ''
       nameKana.value = data.name_kana || ''
-      phoneNumber.value = data.phone_number || ''
+      phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''
       preferredCategory.value = data.preferred_category || 'barber'
       isLineUser.value = data.provider === 'line' // LINEユーザーかチェック
       // 未入力なら開く、入力済みなら閉じる
@@ -138,7 +138,7 @@ const fetchReservations = async (userId: string) => {
           const data = custSnap.docs[0]!.data()
           nameKanji.value = data.name_kanji || ''
           nameKana.value = data.name_kana || ''
-          phoneNumber.value = data.phone_number || ''
+          phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''
           preferredCategory.value = data.preferred_category || 'barber'
           // 未入力なら開く、入力済みなら閉じる
           isProfileOpen.value = !nameKana.value || !phoneNumber.value

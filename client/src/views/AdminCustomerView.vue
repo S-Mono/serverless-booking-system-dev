@@ -93,6 +93,8 @@ const openEditModal = async (customer?: Customer) => {
     if (customer) {
         isEditing.value = true
         editForm.value = JSON.parse(JSON.stringify(customer))
+        // 電話番号をフォーマットして表示
+        editForm.value.phone_number = formatPhoneNumber(customer.phone_number || '')
         // 編集時、is_existing_customer が存在しないケースに備えてデフォルトを付与
         if (typeof editForm.value.is_existing_customer === 'undefined') editForm.value.is_existing_customer = true
         if (!editForm.value.preferred_category) editForm.value.preferred_category = 'barber'
@@ -107,21 +109,27 @@ const openEditModal = async (customer?: Customer) => {
 
 const saveCustomer = async () => {
     if (!editForm.value.name_kana) return dialog.alert('名前（カナ）は必須です')
+
+    // 電話番号からハイフンを除去して保存
+    const phoneNumberToSave = editForm.value.phone_number.replace(/[^0-9]/g, '')
+
     try {
         if (isEditing.value) {
             await updateDoc(doc(db, 'customers', editForm.value.id), {
                 name_kana: editForm.value.name_kana,
-                phone_number: editForm.value.phone_number,
+                phone_number: phoneNumberToSave,
                 memo: editForm.value.memo || '',
                 preferred_category: editForm.value.preferred_category,
                 is_existing_customer: editForm.value.is_existing_customer ?? true
             })
         } else {
             await addDoc(collection(db, 'customers'), {
-                ...editForm.value,
-                created_at: Timestamp.now(),
-                // 作成時はフォームの選択に従う
+                name_kana: editForm.value.name_kana,
+                phone_number: phoneNumberToSave,
+                memo: editForm.value.memo || '',
+                preferred_category: editForm.value.preferred_category,
                 is_existing_customer: editForm.value.is_existing_customer ?? true,
+                created_at: Timestamp.now(),
                 deleted_at: null
             })
         }
@@ -221,7 +229,7 @@ onMounted(() => { fetchCustomers() })
                         <tbody>
                             <tr v-for="cust in filteredCustomers" :key="cust.id">
                                 <td class="name-cell">{{ cust.name_kana }}</td>
-                                <td>{{ cust.phone_number }}</td>
+                                <td>{{ formatPhoneNumber(cust.phone_number || '') }}</td>
                                 <td>{{ cust.is_existing_customer ? '既存' : '新規' }}</td>
                                 <td>{{ cust.preferred_category === 'beauty' ? '美容' : '理容' }}</td>
                                 <td class="memo-cell">{{ cust.memo }}</td>
@@ -258,7 +266,9 @@ onMounted(() => { fetchCustomers() })
                             </div>
                             <div class="form-group">
                                 <label>電話番号</label>
-                                <input type="tel" v-model="editForm.phone_number" placeholder="09012345678" />
+                                <input type="tel" v-model="editForm.phone_number"
+                                    @input="(e) => editForm.phone_number = formatPhoneNumber((e.target as HTMLInputElement).value)"
+                                    placeholder="090-1234-5678" />
                             </div>
                         </div>
                         <div class="form-group">

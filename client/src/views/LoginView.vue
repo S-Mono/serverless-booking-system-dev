@@ -35,6 +35,29 @@ const pendingPassword = ref('')
 const PSEUDO_DOMAIN = '@local.booking-system'
 const LINE_DOMAIN = '@line.booking-system'
 
+// 電話番号フォーマット（ハイフン自動補完）
+const formatPhoneNumber = (value: string) => {
+  const numbers = value.replace(/[^0-9]/g, '')
+  if (numbers.length <= 3) return numbers
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 8) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
+  if (numbers.length === 9) return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  if (numbers.length === 10) {
+    if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
+    }
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  }
+  if (numbers.length >= 11) return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  return numbers
+}
+
+const handlePhoneInput = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  phoneNumber.value = formatPhoneNumber(input.value)
+}
+
 const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string, nameKanji?: string) => {
   try {
     const docRef = doc(db, 'customers', user.uid)
@@ -449,8 +472,9 @@ const cancelCustomerSelection = () => {
 
     <form @submit.prevent="handleAuth" class="auth-form">
       <div class="form-group">
-        <label>電話番号 (ハイフンなし)</label>
-        <input type="tel" v-model="phoneNumber" placeholder="09012345678" required pattern="[0-9]*" />
+        <label>電話番号</label>
+        <input type="tel" v-model="phoneNumber" @input="handlePhoneInput" placeholder="090-1234-5678" required
+          pattern="[0-9\-]*" />
       </div>
       <div class="form-group">
         <label>パスワード</label>
