@@ -145,10 +145,10 @@ const goBack = () => router.push('/admin')
 const goToTrash = () => router.push('/admin/customers/trash')
 
 // 📋 カルテ画面へ遷移
-const goToCustomerRecords = (customerId: string) => {
+const goToRecords = (customerId: string) => {
     console.log('📋 カルテ画面へ遷移:', customerId)
     showModal.value = false
-    const path = `/admin/customer-records/${customerId}?from=customers`
+    const path = `/admin/customers/${customerId}/records`
     console.log('遷移先パス:', path)
     router.push(path).catch(err => {
         console.error('ルーティングエラー:', err)
@@ -285,6 +285,8 @@ onMounted(() => { fetchCustomers() })
                         </div>
                         <div class="modal-actions">
                             <button @click="saveCustomer" class="save-btn">保存する</button>
+                            <button v-if="isEditing" @click="goToRecords(editForm.id)" class="records-btn">📋
+                                カルテを見る</button>
                         </div>
                     </div>
                     <div v-if="isEditing" class="history-section">
@@ -586,7 +588,9 @@ textarea {
 }
 
 .modal-actions {
-    text-align: right;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
     margin-top: 0.5rem;
 }
 
@@ -598,6 +602,27 @@ textarea {
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
+}
+
+.save-btn:hover {
+    background: #2980b9;
+}
+
+.records-btn {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.records-btn:hover {
+    background: #229954;
 }
 
 .radio-group {

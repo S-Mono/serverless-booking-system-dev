@@ -794,7 +794,7 @@ const goToCustomerDetail = () => {
 // 📋 カルテ画面へ遷移
 const goToCustomerRecords = () => {
   if (selectedReservation.value?.customer_id) {
-    router.push(`/admin/customer-records/${selectedReservation.value.customer_id}?from=reservations`)
+    router.push(`/admin/customers/${selectedReservation.value.customer_id}/records`)
   }
 }
 
@@ -1411,7 +1411,7 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-          }}</span>
+            }}</span>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>
