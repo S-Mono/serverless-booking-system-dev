@@ -1,14 +1,14 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import {onObjectFinalized} from "firebase-functions/v2/storage";
+// import {onObjectFinalized} from "firebase-functions/v2/storage";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
 import axios from "axios";
-import * as path from "path";
-import * as os from "os";
-import * as fs from "fs";
+// import * as path from "path";
+// import * as os from "os";
+// import * as fs from "fs";
 
 admin.initializeApp();
 
@@ -446,7 +446,7 @@ export const pruneOldMedicalRecords = onSchedule(
     timeZone: "Asia/Tokyo",
     region: "asia-northeast1",
   },
-  async (context) => {
+  async () => {
     const db = admin.firestore();
     const bucketName = process.env.STORAGE_BUCKET ||
       "booking-system-dev-81786.appspot.com";
@@ -467,7 +467,16 @@ export const pruneOldMedicalRecords = onSchedule(
         .get();
 
       // 顧客ごとにグループ化
-      const recordsByCustomer = new Map<string, any[]>();
+      interface MedicalRecord {
+        id: string;
+        ref: FirebaseFirestore.DocumentReference;
+        recorded_at: FirebaseFirestore.Timestamp;
+        expiry_date: FirebaseFirestore.Timestamp;
+        customer_id: string;
+        [key: string]: unknown;
+      }
+
+      const recordsByCustomer = new Map<string, MedicalRecord[]>();
 
       allRecordsSnap.docs.forEach((doc) => {
         const data = doc.data();
@@ -481,7 +490,7 @@ export const pruneOldMedicalRecords = onSchedule(
           id: doc.id,
           ref: doc.ref,
           ...data,
-        });
+        } as MedicalRecord);
       });
 
       let deletedCount = 0;
@@ -511,7 +520,8 @@ export const pruneOldMedicalRecords = onSchedule(
               // 2. Firestore ドキュメント削除
               await record.ref.delete();
               logger.info(
-                `Deleted medical record: ${record.id} for customer ${customerId}`
+                `Deleted medical record: ${record.id} ` +
+                `for customer ${customerId}`
               );
 
               deletedCount++;
@@ -536,9 +546,13 @@ export const pruneOldMedicalRecords = onSchedule(
  * Storage に画像がアップロードされたら自動でサムネイルを生成
  * Sharp ライブラリを使用
  */
+// Storage bucket region detection issue - temporarily disabled
+// TODO: Re-enable after configuring Storage bucket properly
+/*
 export const generateThumbnail = onObjectFinalized(
   {
-    region: "asia-northeast1",
+    region: "us-west1",
+    bucket: "booking-system-dev-81786.appspot.com",
   },
   async (event) => {
     const filePath = event.data.name;
@@ -603,6 +617,159 @@ export const generateThumbnail = onObjectFinalized(
     } catch (error) {
       logger.error("Error generating thumbnail:", error);
       // エラーでも処理を止めない
+    }
+  }
+);
+*/
+
+/**
+ * パスワードリセットリクエストが作成されたらメールを送信
+ */
+export const onPasswordResetRequest = onDocumentCreated(
+  {
+    document: "password_reset_requests/{requestId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) {
+      logger.warn("No document data in password reset request");
+      return;
+    }
+
+    const resetData = snap.data();
+    const token = resetData.token;
+    const email = resetData.email;
+    const customerName = resetData.name_kana || "お客様";
+
+    logger.info("Password reset request received", {
+      email,
+      customerName,
+      requestId: snap.id,
+    });
+
+    // リセットURL（開発環境のドメインに変更してください）
+    const baseUrl = process.env.APP_URL || "http://localhost:5173";
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+    // Gmail SMTPでメール送信
+    const transporter = createTransporter();
+    const fromEmail = process.env.SMTP_USER || "noreply@example.com";
+
+    const mailOptions = {
+      from: fromEmail,
+      to: email,
+      subject: "パスワード再設定のご案内",
+      text: `${customerName}様\n\n` +
+        "パスワード再設定のリクエストを受け付けました。\n" +
+        "以下のURLからパスワードを再設定してください。\n\n" +
+        `${resetUrl}\n\n` +
+        "このリンクの有効期限は10分間です。\n" +
+        "※このメールに心当たりがない場合は、無視してください。",
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>パスワード再設定のご案内</h2>
+          <p>${customerName}様</p>
+          <p>パスワード再設定のリクエストを受け付けました。</p>
+          <p>以下のボタンからパスワードを再設定してください。</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetUrl}" 
+               style="background: linear-gradient(135deg,
+                      #667eea 0%, #764ba2 100%);
+                      color: white;
+                      padding: 12px 30px;
+                      text-decoration: none;
+                      border-radius: 6px;
+                      display: inline-block;
+                      font-weight: bold;">
+              パスワードを再設定する
+            </a>
+          </div>
+          <p style="font-size: 0.9em; color: #666;">
+            このリンクの有効期限は10分間です。
+          </p>
+          <p style="font-size: 0.9em; color: #666;">
+            ※このメールに心当たりがない場合は、無視してください。
+          </p>
+          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+          <p style="font-size: 0.8em; color: #999;">
+            このメールは自動送信されています。返信できません。
+          </p>
+        </div>
+      `,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      logger.info("Password reset email sent successfully", {
+        email,
+        requestId: snap.id,
+      });
+    } catch (error: unknown) {
+      const errorObj = error as {message?: string; stack?: string};
+      logger.error("Failed to send password reset email", {
+        error: errorObj.message,
+        stack: errorObj.stack,
+        email,
+      });
+    }
+  }
+);
+
+/**
+ * 管理者が顧客のパスワードを変更
+ */
+export const adminUpdatePassword = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const {uid, newPassword} = request.data;
+
+    if (!uid || !newPassword) {
+      throw new HttpsError(
+        "invalid-argument",
+        "uid and newPassword are required"
+      );
+    }
+
+    // 管理者権限チェック
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication required");
+    }
+
+    const callerUid = request.auth.uid;
+    const callerDoc = await admin
+      .firestore()
+      .collection("customers")
+      .doc(callerUid)
+      .get();
+
+    if (!callerDoc.exists || callerDoc.data()?.role !== "admin") {
+      throw new HttpsError(
+        "permission-denied",
+        "Admin permission required"
+      );
+    }
+
+    try {
+      await admin.auth().updateUser(uid, {
+        password: newPassword,
+      });
+
+      logger.info("Admin updated user password", {
+        adminUid: callerUid,
+        targetUid: uid,
+      });
+
+      return {success: true};
+    } catch (error: unknown) {
+      const errorObj = error as {message?: string};
+      logger.error("Failed to update user password", {
+        error: errorObj.message,
+        targetUid: uid,
+      });
+      throw new HttpsError("internal", "Failed to update password");
     }
   }
 );

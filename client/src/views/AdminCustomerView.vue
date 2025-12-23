@@ -3,11 +3,13 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router' // 👈 useRoute 追加
 import { db } from '../lib/firebase'
 import { collection, getDocs, doc, query, where, orderBy, Timestamp, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 
 const dialog = useDialogStore()
 const router = useRouter()
 const route = useRoute() // 👈 追加
+const functions = getFunctions(undefined, 'asia-northeast1')
 
 interface Customer {
     id: string
@@ -37,6 +39,13 @@ const showModal = ref(false)
 const isEditing = ref(false)
 const editForm = ref<Customer>({ id: '', name_kana: '', phone_number: '', memo: '', preferred_category: 'barber', is_existing_customer: true })
 const history = ref<ReservationHistory[]>([])
+
+// パスワード変更
+const showPasswordModal = ref(false)
+const newPassword = ref('')
+const confirmPassword = ref('')
+const isChangingPassword = ref(false)
+const targetCustomerId = ref('')
 
 const fetchCustomers = async () => {
     loading.value = true
@@ -151,6 +160,43 @@ const deleteCustomer = async (id: string) => {
 
 const goBack = () => router.push('/admin')
 const goToTrash = () => router.push('/admin/customers/trash')
+
+// パスワード変更
+const openPasswordModal = (customerId: string) => {
+    targetCustomerId.value = customerId
+    newPassword.value = ''
+    confirmPassword.value = ''
+    showPasswordModal.value = true
+}
+
+const changeCustomerPassword = async () => {
+    if (!newPassword.value || newPassword.value.length < 6) {
+        dialog.alert('パスワードは6文字以上で入力してください。', '入力エラー')
+        return
+    }
+
+    if (newPassword.value !== confirmPassword.value) {
+        dialog.alert('パスワードが一致しません。', '入力エラー')
+        return
+    }
+
+    isChangingPassword.value = true
+    try {
+        const adminUpdatePassword = httpsCallable(functions, 'adminUpdatePassword')
+        await adminUpdatePassword({
+            uid: targetCustomerId.value,
+            newPassword: newPassword.value
+        })
+
+        dialog.alert('パスワードを変更しました。', '変更完了')
+        showPasswordModal.value = false
+    } catch (e: any) {
+        console.error('パスワード変更エラー', e)
+        dialog.alert('パスワード変更に失敗しました。管理者権限を確認してください。', 'エラー')
+    } finally {
+        isChangingPassword.value = false
+    }
+}
 
 // 電話番号フォーマット（ハイフン自動補完）
 const formatPhoneNumber = (value: string) => {
@@ -316,6 +362,8 @@ onMounted(() => { fetchCustomers() })
                         </div>
                         <div class="modal-actions">
                             <button @click="saveCustomer" class="save-btn">保存する</button>
+                            <button v-if="isEditing && editForm.id" @click="openPasswordModal(editForm.id)"
+                                class="password-btn" type="button">🔒 パスワード変更</button>
                             <button v-if="isEditing" @click="goToRecords(editForm.id)" class="records-btn">📋
                                 カルテを見る</button>
                         </div>
@@ -333,6 +381,35 @@ onMounted(() => { fetchCustomers() })
                                 </li>
                             </ul>
                             <p v-else class="no-history">履歴はありません</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- パスワード変更モーダル -->
+        <div v-if="showPasswordModal" class="modal-overlay" @click.self="showPasswordModal = false">
+            <div class="modal-content password-modal">
+                <div class="modal-header-row">
+                    <h3>🔒 顧客パスワード変更</h3>
+                    <button class="close-x-btn" @click="showPasswordModal = false">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-section">
+                        <div class="form-group">
+                            <label>新しいパスワード <span class="req">*</span></label>
+                            <input type="password" v-model="newPassword" placeholder="6文字以上" />
+                        </div>
+                        <div class="form-group">
+                            <label>パスワード確認 <span class="req">*</span></label>
+                            <input type="password" v-model="confirmPassword" placeholder="もう一度入力" />
+                        </div>
+                        <p class="hint-text">※ パスワードは6文字以上で設定してください。</p>
+                        <div class="modal-actions">
+                            <button @click="changeCustomerPassword" :disabled="isChangingPassword" class="save-btn">
+                                {{ isChangingPassword ? '変更中...' : 'パスワードを変更' }}
+                            </button>
+                            <button @click="showPasswordModal = false" class="cancel-btn">キャンセル</button>
                         </div>
                     </div>
                 </div>
@@ -654,6 +731,47 @@ textarea {
 
 .records-btn:hover {
     background: #229954;
+}
+
+.password-btn {
+    background: #9b59b6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.password-btn:hover {
+    background: #8e44ad;
+}
+
+.cancel-btn {
+    background: #95a5a6;
+    color: white;
+    border: none;
+    padding: 0.6rem 2rem;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.cancel-btn:hover {
+    background: #7f8c8d;
+}
+
+.password-modal {
+    max-width: 400px;
+}
+
+.hint-text {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0.5rem 0;
 }
 
 .radio-group {
