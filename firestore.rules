@@ -80,7 +80,8 @@ service cloud.firestore {
 
     // 🔒 パスワードリセットリクエスト
     match /password_reset_requests/{requestId} {
-      allow read: if isAdmin();
+      // パスワードリセット機能のため、読み取りも許可
+      allow read: if true;
       allow create: if true; // 誰でも作成可能（パスワード忘れ機能用）
       allow update: if true; // トークン使用済みフラグの更新用
     }

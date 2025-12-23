@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { auth, db } from '../lib/firebase'
 import { signInWithEmailAndPassword, updatePassword } from 'firebase/auth'
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore'
+import { collection, query, where, getDocs, updateDoc, doc, orderBy, limit } from 'firebase/firestore'
 import { useDialogStore } from '../stores/dialog'
 
 const router = useRouter()
@@ -30,11 +30,13 @@ onMounted(async () => {
     }
 
     try {
-        // トークンを検証
+        // トークンを検証（作成日時の降順で最新の1件のみ取得）
         const resetQuery = query(
             collection(db, 'password_reset_requests'),
             where('token', '==', token),
-            where('used', '==', false)
+            where('used', '==', false),
+            orderBy('created_at', 'desc'),
+            limit(1)
         )
         const resetSnapshot = await getDocs(resetQuery)
 
