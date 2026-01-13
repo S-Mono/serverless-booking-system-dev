@@ -666,28 +666,6 @@ const submitReservation = async () => {
 
   if (hasError) return
 
-  // 🟢 未登録の電話番号の場合、顧客を自動登録
-  if (!newReservation.value.customer_id && !isEditing.value) {
-    try {
-      console.log('📝 新規顧客を登録します...')
-      const phoneNumberToSave = newReservation.value.customer_phone.replace(/[^0-9]/g, '')
-      const customerRef = await addDoc(collection(db, 'customers'), {
-        name: newReservation.value.customer_name,
-        name_kana: newReservation.value.customer_name, // カナは漢字と同じ値で登録
-        phone_number: phoneNumberToSave,
-        memo: '電話予約にて自動登録',
-        preferred_category: 'barber',
-        is_existing_customer: true,
-        created_at: Timestamp.now()
-      })
-      newReservation.value.customer_id = customerRef.id
-      console.log('✅ 新規顧客を登録しました (ID:', customerRef.id, ')')
-    } catch (err) {
-      console.error('顧客登録エラー:', err)
-      // エラーが発生しても予約は継続
-    }
-  }
-
   const menu = menus.value.find(m => m.id === newReservation.value.menu_id)
   if (!menu) return
   const startDate = new Date(newReservation.value.start_time)
@@ -735,6 +713,73 @@ const submitReservation = async () => {
         console.log('ℹ️ 顧客IDがないため、メッセージ通知はスキップします')
       }
       await dialog.alert('予約を追加しました')
+
+      // 🟢 予約登録後、顧客の新規登録確認処理
+      if (!newReservation.value.customer_id) {
+        try {
+          console.log('📝 顧客の重複チェックを実行...')
+          // 電話番号と顧客名の組み合わせで重複チェック
+          const customersSnap = await getDocs(collection(db, 'customers'))
+          const isDuplicate = customersSnap.docs.some(doc => {
+            const data = doc.data()
+            return data.phone_number === phoneNumberToSave && 
+                   data.name_kana === newReservation.value.customer_name &&
+                   !data.deleted_at
+          })
+
+          if (!isDuplicate) {
+            // 電話番号のみ重複している顧客を検索
+            const phoneOnlyDuplicates = customersSnap.docs
+              .map(doc => ({ id: doc.id, ...doc.data() }))
+              .filter((c: any) => {
+                return c.phone_number === phoneNumberToSave && 
+                       c.name_kana !== newReservation.value.customer_name &&
+                       !c.deleted_at
+              })
+
+            // ダイアログメッセージを構築
+            let confirmMessage = `以下の顧客情報を登録しますか？\n\n` +
+              `お名前: ${newReservation.value.customer_name}\n` +
+              `電話番号: ${formatPhoneNumber(phoneNumberToSave)}\n`
+
+            // 電話番号が重複する既存顧客がいる場合は警告を追加
+            if (phoneOnlyDuplicates.length > 0) {
+              confirmMessage += `\n⚠️ 警告: この電話番号は既に登録されています\n`
+              phoneOnlyDuplicates.forEach((customer: any) => {
+                confirmMessage += `  既存顧客: ${customer.name_kana} (${formatPhoneNumber(customer.phone_number)})\n`
+              })
+            }
+
+            confirmMessage += `\n※「OK」で顧客管理に登録、「キャンセル」で予約のみ登録します`
+
+            const shouldRegister = await dialog.confirm(
+              confirmMessage,
+              '顧客情報の登録確認'
+            )
+
+            if (shouldRegister) {
+              // 顧客を新規登録
+              const customerRef = await addDoc(collection(db, 'customers'), {
+                name_kana: newReservation.value.customer_name,
+                phone_number: phoneNumberToSave,
+                memo: '電話予約にて登録',
+                preferred_category: 'barber',
+                is_existing_customer: true,
+                created_at: Timestamp.now(),
+                deleted_at: null
+              })
+              console.log('✅ 新規顧客を登録しました (ID:', customerRef.id, ')')
+            } else {
+              console.log('ℹ️ 顧客登録をスキップしました')
+            }
+          } else {
+            console.log('ℹ️ 同じ電話番号と名前の顧客が既に存在します')
+          }
+        } catch (err) {
+          console.error('顧客登録処理エラー:', err)
+          // エラーが発生しても予約は完了している
+        }
+      }
     }
     showModal.value = false
   } catch (e) { console.error(e); dialog.alert('処理失敗') }
