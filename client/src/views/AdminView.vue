@@ -62,7 +62,7 @@ const isEditing = ref(false)
 const editingId = ref<string | null>(null)
 
 const newReservation = ref({
-  staff_id: '', start_time: '', customer_name: '', customer_phone: '', customer_id: '', menu_id: '', note: ''
+  staff_id: '', start_time: '', end_time: '', customer_name: '', customer_phone: '', customer_id: '', selectedMenuIds: [] as string[], note: ''
 })
 
 // 顧客サジェスト用
@@ -82,9 +82,53 @@ const newCustomer = ref({
 // バリデーションエラー管理
 const validationErrors = ref({
   start_time: '',
-  menu_id: '',
+  menus: '',
   customer_name: '',
   customer_phone: ''
+})
+
+// 選択済みメニューの管理
+const selectedMenus = computed(() => {
+  return newReservation.value.selectedMenuIds
+    .map(id => menus.value.find(m => m.id === id))
+    .filter(m => m !== undefined) as Menu[]
+})
+
+const totalMenuDuration = computed(() => {
+  return selectedMenus.value.reduce((sum, menu) => sum + menu.duration_min, 0)
+})
+
+// メニューを追加
+const addMenu = (menuId: string) => {
+  if (!newReservation.value.selectedMenuIds.includes(menuId)) {
+    newReservation.value.selectedMenuIds.push(menuId)
+    updateEndTime()
+  }
+}
+
+// メニューを削除
+const removeMenu = (menuId: string) => {
+  const index = newReservation.value.selectedMenuIds.indexOf(menuId)
+  if (index > -1) {
+    newReservation.value.selectedMenuIds.splice(index, 1)
+    updateEndTime()
+  }
+}
+
+// 終了時間を更新（開始時間 + メニューの累計時間）
+const updateEndTime = () => {
+  if (newReservation.value.start_time && totalMenuDuration.value > 0) {
+    const startDate = new Date(newReservation.value.start_time)
+    const endDate = new Date(startDate.getTime() + totalMenuDuration.value * 60000)
+    newReservation.value.end_time = toLocalISOString(endDate)
+  } else {
+    newReservation.value.end_time = ''
+  }
+}
+
+// 開始時間が変更されたときに終了時間も更新
+watch(() => newReservation.value.start_time, () => {
+  updateEndTime()
 })
 
 // 🟢 担当スタッフが対応可能なメニューのみ表示
@@ -636,7 +680,7 @@ const submitReservation = async () => {
   // バリデーションエラーをリセット
   validationErrors.value = {
     start_time: '',
-    menu_id: '',
+    menus: '',
     customer_name: '',
     customer_phone: ''
   }
@@ -649,8 +693,8 @@ const submitReservation = async () => {
     hasError = true
   }
 
-  if (!newReservation.value.menu_id) {
-    validationErrors.value.menu_id = 'メニューを選択してください'
+  if (newReservation.value.selectedMenuIds.length === 0) {
+    validationErrors.value.menus = 'メニューを選択してください'
     hasError = true
   }
 
@@ -666,13 +710,20 @@ const submitReservation = async () => {
 
   if (hasError) return
 
-  const menu = menus.value.find(m => m.id === newReservation.value.menu_id)
-  if (!menu) return
   const startDate = new Date(newReservation.value.start_time)
-  const endDate = new Date(startDate.getTime() + menu.duration_min * 60000)
+  const endDate = newReservation.value.end_time ? new Date(newReservation.value.end_time) : new Date(startDate.getTime() + totalMenuDuration.value * 60000)
 
   // 電話番号からハイフンを除去して保存
   const phoneNumberToSave = newReservation.value.customer_phone.replace(/[^0-9]/g, '')
+
+  const menuItems = selectedMenus.value.map(menu => ({
+    title: menu.title,
+    duration: menu.duration_min,
+    price: getTaxPrice(menu.price)
+  }))
+
+  const totalPrice = menuItems.reduce((sum, item) => sum + item.price, 0)
+  const totalDuration = menuItems.reduce((sum, item) => sum + item.duration, 0)
 
   const payload = {
     staff_id: newReservation.value.staff_id,
@@ -681,7 +732,9 @@ const submitReservation = async () => {
     customer_id: newReservation.value.customer_id || undefined,
     customer_name: newReservation.value.customer_name,
     customer_phone: phoneNumberToSave,
-    menu_items: [{ title: menu.title, duration: menu.duration_min, price: getTaxPrice(menu.price) }],
+    menu_items: menuItems,
+    total_price: totalPrice,
+    total_duration_min: totalDuration,
     source: 'phone', note: newReservation.value.note || '', status: 'confirmed'
   }
   try {
@@ -696,12 +749,13 @@ const submitReservation = async () => {
         try {
           const staffName = staffs.value.find(s => s.id === newReservation.value.staff_id)?.name || '担当者'
           const dateStr = startDate.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          const menuNames = menuItems.map(m => m.title).join(', ')
 
           await addDoc(collection(db, 'messages'), {
             customer_id: newReservation.value.customer_id,
             reservation_id: docRef.id,
             title: '予約が確定しました',
-            body: `📞 お電話にてご予約いただいた内容が確定いたしました。\n\n日時: ${dateStr}\nメニュー: ${menu.title}\n担当: ${staffName}\n\nご来店を心よりお待ちしております。`,
+            body: `📞 お電話にてご予約いただいた内容が確定いたしました。\n\n日時: ${dateStr}\nメニュー: ${menuNames}\n担当: ${staffName}\n\nご来店を心よりお待ちしております。`,
             created_at: Timestamp.now(),
             is_read: false
           })
@@ -907,14 +961,19 @@ const goToCustomerRecords = () => {
 }
 
 const openEditModal = (res: Reservation) => {
-  const matchedMenu = menus.value.find(m => m.title === res.menu_items[0]?.title)
+  // 既存のメニューをマッチング
+  const matchedMenuIds = res.menu_items
+    .map(item => menus.value.find(m => m.title === item.title)?.id)
+    .filter((id): id is string => id !== undefined)
+
   newReservation.value = {
     staff_id: res.staff_id,
     start_time: toLocalISOString(res.start_at.toDate()),
+    end_time: toLocalISOString(res.end_at.toDate()),
     customer_name: res.customer_name || '',
     customer_phone: formatPhoneNumber(res.customer_phone || ''),
     customer_id: res.customer_id || '',
-    menu_id: matchedMenu ? matchedMenu.id : '',
+    selectedMenuIds: matchedMenuIds,
     note: res.note || ''
   }
   isEditing.value = true; editingId.value = res.id; showDetailModal.value = false; showModal.value = true
@@ -959,7 +1018,8 @@ const onMouseUp = () => {
   newReservation.value = {
     staff_id: dragStaffId.value,
     start_time: toLocalISOString(dragStartTime.value),
-    customer_name: '', customer_phone: '', customer_id: '', menu_id: '', note: ''
+    end_time: '',
+    customer_name: '', customer_phone: '', customer_id: '', selectedMenuIds: [], note: ''
   }
   showModal.value = true; isDragging.value = false; dragStaffId.value = null
 }
@@ -1497,12 +1557,27 @@ const exportReservationsToExcel = async () => {
           <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
         </div>
         <div class="form-group">
+          <label>終了日時 <span style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span></label>
+          <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
+          <p class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
+        </div>
+        <div class="form-group">
           <label>メニュー <span style="color: #e74c3c;">*</span></label>
-          <select v-model="newReservation.menu_id" :class="{ 'input-error': validationErrors.menu_id }">
-            <option value="" disabled>選択してください</option>
+          <select @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
+            :class="{ 'input-error': validationErrors.menus }">
+            <option value="">メニューを追加...</option>
             <option v-for="m in availableMenus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
           </select>
-          <span v-if="validationErrors.menu_id" class="error-message">{{ validationErrors.menu_id }}</span>
+          <div v-if="selectedMenus.length > 0" class="selected-menus">
+            <span v-for="menu in selectedMenus" :key="menu.id" class="menu-chip">
+              {{ menu.title }} ({{ menu.duration_min }}分)
+              <button type="button" class="remove-menu-btn" @click="removeMenu(menu.id)">×</button>
+            </span>
+          </div>
+          <div v-if="totalMenuDuration > 0" class="menu-summary">
+            合計所要時間: <strong>{{ totalMenuDuration }}分</strong>
+          </div>
+          <span v-if="validationErrors.menus" class="error-message">{{ validationErrors.menus }}</span>
         </div>
         <div class="form-group">
           <label>電話番号 <span style="color: #e74c3c;">*</span></label>
@@ -2185,6 +2260,61 @@ const exportReservationsToExcel = async () => {
   background-color: #229954;
 }
 
+/* 選択済みメニューチップ */
+.selected-menus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.menu-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #3498db;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.remove-menu-btn {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.remove-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.menu-summary {
+  margin-top: 8px;
+  padding: 8px;
+  background: #e8f5e9;
+  border-radius: 4px;
+  color: #2e7d32;
+  font-size: 0.9rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 4px;
+}
+
 /* リンクテキストボタン */
 .link-text-btn {
   margin-left: 8px;
@@ -2263,8 +2393,9 @@ const exportReservationsToExcel = async () => {
 .time-label-cell {
   flex: 1;
   border-right: 1px solid transparent;
-  font-size: 0.7rem;
-  color: #666;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #333;
   padding-left: 2px;
   display: flex;
   align-items: center;
