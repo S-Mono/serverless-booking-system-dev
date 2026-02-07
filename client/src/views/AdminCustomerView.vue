@@ -120,6 +120,11 @@ const openEditModal = async (customer?: Customer) => {
 const saveCustomer = async () => {
     if (!editForm.value.name_kana) return dialog.alert('名前（カナ）は必須です')
 
+    // カルテ番号のバリデーション（半角英数字とハイフンのみ許容）
+    if (editForm.value.record_number && !/^[A-Za-z0-9-]*$/.test(editForm.value.record_number)) {
+        return dialog.alert('カルテ番号は半角英数字とハイフンのみ使用できます')
+    }
+
     // 電話番号からハイフンを除去して保存
     const phoneNumberToSave = editForm.value.phone_number.replace(/[^0-9]/g, '')
 
