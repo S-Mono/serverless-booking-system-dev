@@ -1,31 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { db } from '../lib/firebase'
-import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, getDoc, writeBatch, query, where } from 'firebase/firestore'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
+import { useMenu } from '../composables'
 
 const dialog = useDialogStore()
 const router = useRouter()
+const userStore = useUserStore()
 
-interface Staff { id: string; name: string; code?: string }
-interface Menu {
-  id: string
-  title: string
-  price: number
-  price_with_tax: number
-  duration_min: number
-  available_staff_ids: string[]
-  description?: string
-  category: 'barber' | 'beauty' | 'chiro'
-  order_priority: number
-}
-
-const menus = ref<Menu[]>([])
-const staffs = ref<Staff[]>([])
-const loading = ref(true)
-const taxRate = ref(10)
+const { menus, staffs, isLoading: loading, isOperating, taxRate, menusByCategory, fetchData, calcTaxIncluded, calcTaxExcluded, saveMenu, deleteMenu, deleteCategoryMenus, importFromCsv, getStaffName } = useMenu({
+  onError: (error) => dialog.alert(error.message || '読み込みエラー', 'エラー')
+})
 
 const showModal = ref(false)
 const isEditing = ref(false)
@@ -38,39 +24,11 @@ const editForm = ref({
 
 const categories = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
 
-const menusByCategory = computed(() => {
-  return {
-    barber: menus.value.filter(m => m.category === 'barber' || !m.category),
-    beauty: menus.value.filter(m => m.category === 'beauty'),
-    chiro: menus.value.filter(m => m.category === 'chiro')
-  }
-})
-
-const calcTaxIncluded = (price: number) => Math.ceil(price * (1 + taxRate.value / 100))
-const calcTaxExcluded = (priceWithTax: number) => Math.ceil(priceWithTax / (1 + taxRate.value / 100))
 const updateInclusive = () => { editForm.value.priceWithTax = calcTaxIncluded(editForm.value.price) }
 const updateExclusive = () => { editForm.value.price = calcTaxExcluded(editForm.value.priceWithTax) }
 
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const [menuSnap, staffSnap, configSnap] = await Promise.all([
-      getDocs(collection(db, 'menus')),
-      getDocs(collection(db, 'staffs')),
-      getDoc(doc(db, 'shop_config', 'default_config'))
-    ])
-    menus.value = menuSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), price_with_tax: doc.data().price_with_tax ?? Math.ceil(doc.data().price * 1.1), order_priority: doc.data().order_priority ?? 999 })).sort((a: any, b: any) => a.order_priority - b.order_priority) as Menu[]
-    staffs.value = staffSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Staff[]
-    if (configSnap.exists()) {
-      taxRate.value = configSnap.data().tax_rate ?? 10
-    }
-  } catch (e) { console.error(e); dialog.alert('読み込みエラー') } finally { loading.value = false }
-}
-
 // ⚡ カテゴリ内全削除 (開発者用)
-const userStore = useUserStore()
-
-const deleteCategoryMenus = async (catId: string, catLabel: string) => {
+const deleteCategoryMenusHandler = async (catId: string, catLabel: string) => {
   // 管理者権限チェック
   if (!userStore.isAdmin) return dialog.alert('管理者権限が必要です', 'エラー')
 
@@ -78,35 +36,13 @@ const deleteCategoryMenus = async (catId: string, catLabel: string) => {
   const ok = await dialog.confirm(`本当に「${catLabel}」内のメニューを全て削除しますか？\nこの操作は取り消せません。`, '完全削除の確認', 'danger')
   if (!ok) return
 
-  loading.value = true
-  try {
-    // 3. 削除対象をクエリで取得
-    const q = query(collection(db, 'menus'), where('category', '==', catId))
-    const snapshot = await getDocs(q)
-
-    if (snapshot.empty) {
-      loading.value = false
-      return dialog.alert('削除対象のメニューがありません')
-    }
-
-    // 4. バッチ削除実行
-    const batch = writeBatch(db)
-    snapshot.docs.forEach(doc => {
-      batch.delete(doc.ref)
-    })
-    await batch.commit()
-
+  const success = await deleteCategoryMenus(catId)
+  if (success) {
     dialog.alert(`「${catLabel}」のメニューを削除しました`)
-    fetchData()
-  } catch (e) {
-    console.error(e)
-    dialog.alert('削除に失敗しました', 'エラー')
-  } finally {
-    loading.value = false
+  } else {
+    dialog.alert('削除対象のメニューがありません')
   }
-}
-
-// 📤 CSVインポート処理
+}// 📤 CSVインポート処理
 const triggerFileUpload = () => fileInput.value?.click()
 
 const importCsv = async (event: Event) => {
@@ -120,47 +56,11 @@ const importCsv = async (event: Event) => {
   const reader = new FileReader()
   reader.onload = async (e) => {
     const text = e.target?.result as string
-    const lines = text.split(/\r\n|\n/)
-    let count = 0
+    const count = await importFromCsv(text)
 
-    try {
-      const batch = writeBatch(db) // バッチ処理で高速化
-
-      for (let i = 0; i < lines.length; i++) {
-        const line: string = lines[i]!.trim()
-        if (!line || line.startsWith('メニュー名')) continue
-
-        const [title, priceInStr, durationStr, catStr, orderStr, desc, staffCodesStr] = line.split(',')
-
-        if (!title || !priceInStr) continue
-
-        // 各変数に `?? ''` (undefinedなら空文字) や `?? '0'` をつけて型エラーを回避
-        const priceWithTax = parseInt(priceInStr ?? '0')
-        const price = calcTaxExcluded(priceWithTax)
-        const duration = parseInt(durationStr ?? '30') || 30
-        const category = (['barber', 'beauty', 'chiro'].includes(catStr ?? '') ? catStr : 'barber') as any
-        const orderPriority = orderStr ? parseInt(orderStr) : 999
-        const targetCodes = staffCodesStr ? staffCodesStr.split('/') : []
-        const staffIds = staffs.value.filter(s => s.code && targetCodes.includes(s.code)).map(s => s.id)
-
-        const newDocRef = doc(collection(db, 'menus'))
-        batch.set(newDocRef, {
-          title,
-          price,
-          price_with_tax: priceWithTax,
-          duration_min: duration,
-          category,
-          description: desc || '',
-          available_staff_ids: staffIds,
-          order_priority: orderPriority
-        })
-        count++
-      }
-      await batch.commit()
+    if (count > 0) {
       dialog.alert(`${count}件のメニューを取り込みました`)
-      fetchData()
-    } catch (err) {
-      console.error(err)
+    } else {
       dialog.alert('取り込みに失敗しました。フォーマットを確認してください。', 'エラー')
     }
     target.value = ''
@@ -168,7 +68,7 @@ const importCsv = async (event: Event) => {
   reader.readAsText(file)
 }
 
-const openEditModal = (menu?: Menu) => {
+const openEditModal = (menu?: any) => {
   if (menu) {
     isEditing.value = true
     editTargetId.value = menu.id
@@ -182,22 +82,41 @@ const openEditModal = (menu?: Menu) => {
   }
   showModal.value = true
 }
-const saveMenu = async () => {
+
+const saveMenuHandler = async () => {
   if (!editForm.value.title) return dialog.alert('メニュー名を入力してください')
-  try {
-    const payload = {
-      title: editForm.value.title, price: editForm.value.price, price_with_tax: editForm.value.priceWithTax,
-      duration_min: editForm.value.duration_min, available_staff_ids: editForm.value.available_staff_ids,
-      description: editForm.value.description || '', category: editForm.value.category, order_priority: Number(editForm.value.order_priority)
-    }
-    if (isEditing.value && editTargetId.value) await updateDoc(doc(db, 'menus', editTargetId.value), payload)
-    else await addDoc(collection(db, 'menus'), payload)
-    dialog.alert('保存しました'); showModal.value = false; fetchData()
-  } catch (e) { console.error(e); dialog.alert('保存失敗') }
+
+  const success = await saveMenu({
+    id: editTargetId.value || undefined,
+    title: editForm.value.title,
+    price: editForm.value.price,
+    price_with_tax: editForm.value.priceWithTax,
+    duration_min: editForm.value.duration_min,
+    available_staff_ids: editForm.value.available_staff_ids,
+    description: editForm.value.description || '',
+    category: editForm.value.category,
+    order_priority: Number(editForm.value.order_priority)
+  })
+
+  if (success) {
+    dialog.alert('保存しました')
+    showModal.value = false
+  } else {
+    dialog.alert('保存失敗', 'エラー')
+  }
 }
-const deleteMenu = async (id: string) => { const ok = await dialog.confirm('本当に削除しますか？', '削除確認', 'danger'); if (!ok) return; try { await deleteDoc(doc(db, 'menus', id)); fetchData() } catch (e) { dialog.alert('削除失敗') } }
+
+const deleteMenuHandler = async (id: string) => {
+  const ok = await dialog.confirm('本当に削除しますか？', '削除確認', 'danger')
+  if (!ok) return
+
+  const success = await deleteMenu(id)
+  if (!success) {
+    dialog.alert('削除失敗', 'エラー')
+  }
+}
+
 const goBack = () => router.push('/admin/settings')
-const getStaffName = (id: string) => staffs.value.find(s => s.id === id)?.name || id
 
 onMounted(() => { fetchData() })
 </script>
@@ -224,7 +143,8 @@ onMounted(() => { fetchData() })
           <div v-for="cat in categories" :key="cat.id" class="category-section">
             <div class="cat-header">
               <h3 class="cat-title">{{ cat.label }}</h3>
-              <button @click="deleteCategoryMenus(cat.id, cat.label)" class="delete-cat-btn" title="このカテゴリのメニューを全削除">🗑️
+              <button @click="deleteCategoryMenusHandler(cat.id, cat.label)" class="delete-cat-btn"
+                title="このカテゴリのメニューを全削除">🗑️
                 全削除</button>
             </div>
 
@@ -238,7 +158,7 @@ onMounted(() => { fetchData() })
                     <h3>{{ menu.title }}</h3>
                   </div>
                   <div class="card-actions"><button @click="openEditModal(menu)" class="edit-icon">✏️</button><button
-                      @click="deleteMenu(menu.id)" class="delete-icon">🗑️</button></div>
+                      @click="deleteMenuHandler(menu.id)" class="delete-icon">🗑️</button></div>
                 </div>
                 <div class="card-details">
                   <div class="detail-row"><span class="label">価格:</span><span>¥{{ menu.price.toLocaleString() }} <small
@@ -283,7 +203,7 @@ onMounted(() => { fetchData() })
         </div>
         <div class="form-group"><label>説明 (任意)</label><textarea v-model="editForm.description"></textarea></div>
         <div class="modal-actions"><button @click="showModal = false" class="cancel-btn">キャンセル</button><button
-            @click="saveMenu" class="save-btn">保存</button></div>
+            @click="saveMenuHandler" class="save-btn">保存</button></div>
       </div>
     </div>
   </div>

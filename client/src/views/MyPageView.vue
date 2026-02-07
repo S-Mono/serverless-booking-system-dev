@@ -1,35 +1,39 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { db, auth } from '../lib/firebase'
-import { collection, query, where, getDocs, deleteDoc, doc, setDoc, Timestamp, orderBy, getDoc, updateDoc, addDoc } from 'firebase/firestore'
+import { auth } from '../lib/firebase'
+import { Timestamp } from 'firebase/firestore'
 import { onAuthStateChanged, signOut, type Unsubscribe, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
 import { useRouter } from 'vue-router'
+import { useCustomer, useReservation, useContact } from '../composables'
 
 const dialog = useDialogStore()
 const userStore = useUserStore()
 const router = useRouter()
 const functions = getFunctions(undefined, 'asia-northeast1')
 
-interface Reservation {
-  id: string
-  start_at: Timestamp
-  menu_items: { title: string; price: number }[]
-  status: string
-}
+// Composablesの初期化
+const { customerData, isLoading: isLoadingCustomer, isSaving: isSavingProfile, fetchCustomer, saveCustomer } = useCustomer({
+  onError: (error) => dialog.alert(error.message || 'エラーが発生しました', 'エラー')
+})
 
-const reservations = ref<Reservation[]>([])
+const { reservations, isLoading: isLoadingReservations, isOperating: isCancellingReservation, fetchUserReservations, cancelReservation: cancelReservationComposable } = useReservation({
+  onError: (error) => dialog.alert(error.message || 'エラーが発生しました', 'エラー')
+})
+
+const { isSending: isSendingContact, sendContact } = useContact({
+  onError: (error) => dialog.alert(error.message || 'エラーが発生しました', 'エラー')
+})
+
 const loading = ref(true)
 const currentUser = ref<any>(null)
 const nameKanji = ref('') // 姓名（漢字）
 const nameKana = ref('') // 読み仮名（カナ）
 const phoneNumber = ref('') // 電話番号
 const preferredCategory = ref('barber')
-const isSavingProfile = ref(false)
 const isProfileOpen = ref(false) // お客様情報の開閉状態
-const isCancellingReservation = ref(false) // 予約キャンセル中フラグ
 const isLineUser = ref(false) // LINEログインユーザーかどうか
 const showPasswordChangeDialog = ref(false) // パスワード変更ダイアログ表示フラグ
 const currentPassword = ref('') // 現在のパスワード
@@ -92,81 +96,35 @@ const handlePhoneInput = (event: Event) => {
 // お問い合わせフォーム
 const isContactFormOpen = ref(false)
 const contactMessage = ref('')
-const isSendingContact = ref(false)
 
-const fetchReservations = async (userId: string) => {
+// ユーザーデータをロード
+const loadUserData = async (userId: string) => {
   loading.value = true
-  console.log('[MyPage] fetchReservations called with userId:', userId)
   try {
-    // 本日00:00以降の予約のみ取得
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    console.log('[MyPage] Fetching reservations from:', today)
+    // 予約と顧客データを並行で取得
+    const [reservationData, customerDataResult] = await Promise.all([
+      fetchUserReservations(userId),
+      fetchCustomer(userId)
+    ])
 
-    const q = query(
-      collection(db, 'reservations'),
-      where('customer_id', '==', userId),
-      where('start_at', '>=', Timestamp.fromDate(today))
-    )
-    const querySnapshot = await getDocs(q)
-    console.log('[MyPage] Query result size:', querySnapshot.size)
-    const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
-    // JavaScript側でソート
-    reservations.value = results.sort((a, b) => a.start_at.seconds - b.start_at.seconds)
-    console.log('[MyPage] Reservations loaded:', reservations.value.length)
-
-    // プロフィール取得 (UID優先)
-    const docRef = doc(db, 'customers', userId)
-    const docSnap = await getDoc(docRef)
-
-    if (docSnap.exists()) {
-      const data = docSnap.data()
-      console.log('[MyPage] Customer data loaded:', {
-        name_kanji: data.name_kanji,
-        name_kana: data.name_kana,
-        phone_number: data.phone_number,
-        provider: data.provider
-      })
-      nameKanji.value = data.name_kanji || ''
-      nameKana.value = data.name_kana || ''
-      phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''
-      console.log('[MyPage] Phone number formatted:', phoneNumber.value)
-      preferredCategory.value = data.preferred_category || 'barber'
-      isLineUser.value = data.provider === 'line' // LINEユーザーかチェック
+    // 顧客データをローカル状態に反映
+    if (customerDataResult) {
+      nameKanji.value = customerDataResult.name_kanji || ''
+      nameKana.value = customerDataResult.name_kana || ''
+      phoneNumber.value = customerDataResult.phone_number ? formatPhoneNumber(customerDataResult.phone_number) : ''
+      preferredCategory.value = customerDataResult.preferred_category || 'barber'
+      isLineUser.value = customerDataResult.provider === 'line'
       // 未入力なら開く、入力済みなら閉じる
       isProfileOpen.value = !nameKana.value || !phoneNumber.value
     } else {
-      console.log('[MyPage] No customer document found for UID, trying phone lookup')
-      // なければ電話番号で名寄せトライ
-      const phone = currentUser.value.email?.split('@')[0]
-      console.log('[MyPage] Phone from email:', phone)
-      if (phone) {
-        const custQ = query(collection(db, 'customers'), where('phone_number', '==', phone))
-        const custSnap = await getDocs(custQ)
-        console.log('[MyPage] Phone lookup result:', custSnap.size, 'documents')
-        if (!custSnap.empty) {
-          const data = custSnap.docs[0]!.data()
-          console.log('[MyPage] Customer data from phone lookup:', data)
-          nameKanji.value = data.name_kanji || ''
-          nameKana.value = data.name_kana || ''
-          phoneNumber.value = data.phone_number ? formatPhoneNumber(data.phone_number) : ''
-          preferredCategory.value = data.preferred_category || 'barber'
-          // 未入力なら開く、入力済みなら閉じる
-          isProfileOpen.value = !nameKana.value || !phoneNumber.value
-        }
-      }
+      isProfileOpen.value = true
     }
   } catch (error: any) {
-    // AbortErrorはユーザーが画面を離れたことによる正常な中断
-    if (error.name === 'AbortError') {
-      console.log('[MyPage] Fetch aborted (user navigated away)')
-      return
+    if (error.name !== 'AbortError') {
+      dialog.alert('データの取得に失敗しました。ページを更新してください。', 'エラー')
     }
-    console.error('[MyPage] Error fetching reservations:', error)
-    dialog.alert('予約情報の取得に失敗しました。ページを更新してください。', 'エラー')
   } finally {
     loading.value = false
-    console.log('[MyPage] Loading complete')
   }
 }
 
@@ -207,99 +165,42 @@ const saveProfile = async () => {
     return
   }
 
-  isSavingProfile.value = true
-  try {
-    // 電話番号からハイフンを除去して保存
-    const cleanPhoneNumber = phoneNumber.value.replace(/[^0-9]/g, '')
+  // 電話番号からハイフンを除去して保存
+  const cleanPhoneNumber = phoneNumber.value.replace(/[^0-9]/g, '')
 
-    await setDoc(doc(db, 'customers', currentUser.value.uid), {
-      name_kanji: nameKanji.value,
-      name_kana: nameKana.value,
-      phone_number: cleanPhoneNumber,
-      preferred_category: preferredCategory.value,
-      is_existing_customer: true,
-      updated_at: Timestamp.now()
-    }, { merge: true })
+  const success = await saveCustomer(currentUser.value.uid, {
+    name_kanji: nameKanji.value,
+    name_kana: nameKana.value,
+    phone_number: cleanPhoneNumber,
+    preferred_category: preferredCategory.value,
+    is_existing_customer: true
+  })
 
+  if (success) {
     // 🔴 ヘッダーの名前を即座に更新（漢字優先、なければカナ）
     userStore.setCustomerName(nameKanji.value || nameKana.value)
-
     dialog.alert('プロフィールを保存しました')
-  } catch (error) { console.error(error); dialog.alert('保存失敗', 'エラー') } finally { isSavingProfile.value = false }
+  } else {
+    dialog.alert('保存失敗', 'エラー')
+  }
 }
 
 const cancelReservation = async (id: string) => {
   const ok = await dialog.open('キャンセルしますか？', { title: '確認', type: 'normal', cancelText: 'いいえ', confirmText: 'はい' })
   if (!ok) return
 
-  isCancellingReservation.value = true
-  console.log('[MyPage] Cancelling reservation:', id)
-  console.log('[MyPage] Current user UID:', currentUser.value?.uid)
-
-  try {
-    // 予約データを取得して確認
-    const resDoc = await getDoc(doc(db, 'reservations', id))
-    if (!resDoc.exists()) {
-      throw new Error('予約が見つかりません')
-    }
-
-    const resData = resDoc.data()
-    console.log('[MyPage] Reservation data:', resData)
-    console.log('[MyPage] Reservation customer_id:', resData.customer_id)
-
-    // 1. 予約自体の削除 (既存処理)
-    await deleteDoc(doc(db, 'reservations', id))
-    console.log('[MyPage] Reservation deleted successfully')
-
-    // 🟢 2. 【追加】関連するメッセージを「キャンセル扱い」に更新
-    // エラーが発生しても予約キャンセル自体は成功とする（非クリティカル処理）
-    try {
-      const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
-      const msgSnap = await getDocs(msgQ)
-
-      // 関連するメッセージがあれば全て更新
-      const updatePromises = msgSnap.docs.map(d =>
-        updateDoc(d.ref, {
-          is_cancelled: true, // キャンセル済みフラグ
-          title: '【キャンセル済】' + d.data().title // タイトルもわかりやすく変更
-        }).catch((err: any) => {
-          // 個別の更新エラーを静かに処理（permission-deniedなど）
-          console.warn('[MyPage] Single message update failed:', err.code || err.message)
-        })
-      )
-      await Promise.all(updatePromises)
-      console.log('[MyPage] Messages updated successfully')
-    } catch (msgError: any) {
-      // クエリ自体のエラーも静かに処理（AbortErrorなど）
-      if (msgError.name !== 'AbortError') {
-        console.warn('[MyPage] Message update failed (non-critical):', msgError.code || msgError.message)
-      }
-    }
-
+  const success = await cancelReservationComposable(id)
+  if (success) {
     dialog.alert('予約をキャンセルしました')
-    reservations.value = reservations.value.filter(res => res.id !== id)
-  } catch (error: any) {
-    // AbortErrorはユーザーが画面を離れたことによる正常な中断なので無視
-    if (error.name === 'AbortError') {
-      console.log('[MyPage] Request aborted (user navigated away)')
-      return
-    }
-
-    console.error('[MyPage] Cancel error:', error)
-    const errorMsg = error?.message || error?.code || '不明なエラー'
-    dialog.alert(`キャンセル失敗: ${errorMsg}`, 'エラー')
-  } finally {
-    isCancellingReservation.value = false
+  } else {
+    const errorMsg = '予約のキャンセルに失敗しました'
+    dialog.alert(`${errorMsg}`, 'エラー')
   }
 }
 
 // 戻る
 const goBack = () => {
-  // ルーターを使ってもいいが、import省略のためhistory.back()でも可
-  // 今回はrouterを使う
-  import('vue-router').then(({ useRouter }) => {
-    useRouter().push('/')
-  })
+  router.push('/')
 }
 
 // お問い合わせ送信
@@ -314,50 +215,19 @@ const sendContactForm = async () => {
     return
   }
 
-  isSendingContact.value = true
-  try {
-    // お客様情報を取得
-    const customerDocRef = doc(db, 'customers', currentUser.value.uid)
-    const customerSnap = await getDoc(customerDocRef)
-    const customerData = customerSnap.exists() ? customerSnap.data() : {}
+  const success = await sendContact(currentUser.value.uid, contactMessage.value, {
+    name_kanji: nameKanji.value,
+    name_kana: nameKana.value,
+    phone_number: phoneNumber.value,
+    email: currentUser.value.email
+  })
 
-    // お問い合わせ内容をFirestoreに保存
-    const contactRef = doc(collection(db, 'contacts'))
-    await setDoc(contactRef, {
-      customer_id: currentUser.value.uid,
-      customer_name: customerData.name_kanji || customerData.name_kana || 'ゲスト',
-      customer_email: currentUser.value.email || '',
-      customer_phone: customerData.phone_number || phoneNumber.value || '',
-      message: contactMessage.value,
-      created_at: Timestamp.now(),
-      status: 'pending'
-    })
-
-    // メッセージコレクションにも通知を追加（お客様が確認できるように）
-    const messageRef = doc(collection(db, 'messages'))
-    await setDoc(messageRef, {
-      customer_id: currentUser.value.uid,
-      title: 'お問い合わせを受け付けました',
-      body: `お問い合わせ内容:\n${contactMessage.value}\n\n折り返しご連絡いたしますので、しばらくお待ちください。`,
-      is_read: false,
-      created_at: Timestamp.now()
-    })
-
+  if (success) {
     dialog.alert('お問い合わせを送信しました。\n折り返しご連絡いたしますので、しばらくお待ちください。', '送信完了')
     contactMessage.value = ''
     isContactFormOpen.value = false
-  } catch (error: any) {
-    // AbortErrorは無視
-    if (error.name === 'AbortError') {
-      console.log('[MyPage] Contact form aborted')
-      return
-    }
-    console.error('お問い合わせ送信エラー:', error)
-    const errorMessage = error?.message || '不明なエラー'
-    const errorCode = error?.code || ''
-    dialog.alert(`送信に失敗しました。\nエラー: ${errorCode}\n${errorMessage}\n\n時間をおいて再度お試しください。`, 'エラー')
-  } finally {
-    isSendingContact.value = false
+  } else {
+    dialog.alert('お問い合わせの送信に失敗しました。\n時間をおいて再度お試しください。', 'エラー')
   }
 }
 
@@ -367,7 +237,7 @@ let unsubscribeAuth: Unsubscribe | null = null
 onMounted(() => {
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user
-    if (user) fetchReservations(user.uid)
+    if (user) loadUserData(user.uid)
     else loading.value = false
   })
 })
