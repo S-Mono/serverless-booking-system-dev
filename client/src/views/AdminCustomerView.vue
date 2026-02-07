@@ -15,6 +15,7 @@ interface Customer {
     id: string
     name_kana: string
     phone_number: string
+    record_number?: string
     memo?: string
     preferred_category?: 'barber' | 'beauty'
     // true => 既存顧客, false => 新規顧客
@@ -37,7 +38,7 @@ const searchQuery = ref('')
 
 const showModal = ref(false)
 const isEditing = ref(false)
-const editForm = ref<Customer>({ id: '', name_kana: '', phone_number: '', memo: '', preferred_category: 'barber', is_existing_customer: true })
+const editForm = ref<Customer>({ id: '', name_kana: '', phone_number: '', record_number: '', memo: '', preferred_category: 'barber', is_existing_customer: true })
 const history = ref<ReservationHistory[]>([])
 
 // パスワード変更
@@ -110,7 +111,7 @@ const openEditModal = async (customer?: Customer) => {
         await fetchHistory(customer.id)
     } else {
         isEditing.value = false
-        editForm.value = { id: '', name_kana: '', phone_number: '', memo: '', preferred_category: 'barber' }
+        editForm.value = { id: '', name_kana: '', phone_number: '', record_number: '', memo: '', preferred_category: 'barber' }
         history.value = []
     }
     showModal.value = true
@@ -127,6 +128,7 @@ const saveCustomer = async () => {
             await updateDoc(doc(db, 'customers', editForm.value.id), {
                 name_kana: editForm.value.name_kana,
                 phone_number: phoneNumberToSave,
+                record_number: editForm.value.record_number || '',
                 memo: editForm.value.memo || '',
                 preferred_category: editForm.value.preferred_category,
                 is_existing_customer: editForm.value.is_existing_customer ?? true
@@ -135,6 +137,7 @@ const saveCustomer = async () => {
             await addDoc(collection(db, 'customers'), {
                 name_kana: editForm.value.name_kana,
                 phone_number: phoneNumberToSave,
+                record_number: editForm.value.record_number || '',
                 memo: editForm.value.memo || '',
                 preferred_category: editForm.value.preferred_category,
                 is_existing_customer: editForm.value.is_existing_customer ?? true,
@@ -337,6 +340,10 @@ onMounted(() => { fetchCustomers() })
                                     @input="(e) => editForm.phone_number = formatPhoneNumber((e.target as HTMLInputElement).value)"
                                     placeholder="090-1234-5678" />
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>カルテ番号</label>
+                            <input type="text" v-model="editForm.record_number" placeholder="例: 12345" />
                         </div>
                         <div class="form-group">
                             <label>よく利用するメニュー</label>
