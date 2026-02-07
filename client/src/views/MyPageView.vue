@@ -432,6 +432,9 @@ const changePassword = async () => {
                     <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
                   </label>
                   <label class="radio-item">
+                    <input type="radio" value="student" v-model="preferredCategory"> 🎓 学生（中学まで）
+                  </label>
+                  <label class="radio-item">
                     <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
                   </label>
                 </div>

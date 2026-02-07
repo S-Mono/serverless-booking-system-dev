@@ -21,7 +21,7 @@ export interface Menu {
   duration_min: number
   available_staff_ids: string[]
   description?: string
-  category: 'barber' | 'beauty' | 'chiro'
+  category: 'barber' | 'beauty' | 'student' | 'chiro'
   order_priority: number
 }
 
@@ -45,6 +45,7 @@ export function useMenu(options?: UseMenuOptions) {
   const menusByCategory = computed(() => ({
     barber: menus.value.filter(m => m.category === 'barber' || !m.category),
     beauty: menus.value.filter(m => m.category === 'beauty'),
+    student: menus.value.filter(m => m.category === 'student'),
     chiro: menus.value.filter(m => m.category === 'chiro')
   }))
 
@@ -202,7 +203,7 @@ export function useMenu(options?: UseMenuOptions) {
         const priceWithTax = parseInt(priceInStr ?? '0')
         const price = calcTaxExcluded(priceWithTax)
         const duration = parseInt(durationStr ?? '30') || 30
-        const category = (['barber', 'beauty', 'chiro'].includes(catStr ?? '') ? catStr : 'barber') as any
+        const category = (['barber', 'beauty', 'student', 'chiro'].includes(catStr ?? '') ? catStr : 'barber') as any
         const orderPriority = orderStr ? parseInt(orderStr) : 999
         const targetCodes = staffCodesStr ? staffCodesStr.split('/') : []
         const staffIds = staffs.value

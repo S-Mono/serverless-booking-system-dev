@@ -42,7 +42,7 @@ const reservationDate = ref('')
 const selectedStaffId = ref<string>('')
 const customerNote = ref('')
 const availableSlots = ref<Date[]>([])
-const activeTab = ref<'barber' | 'beauty' | 'chiro'>('barber')
+const activeTab = ref<'barber' | 'beauty' | 'student' | 'chiro'>('barber')
 
 const minDateTime = computed(() => {
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16)
@@ -109,7 +109,7 @@ const checkCustomerStatus = async (user: any) => {
         preferred_category: data.preferred_category
       }
       isNewUser.value = !data.is_existing_customer
-      if (data.preferred_category && ['barber', 'beauty', 'chiro'].includes(data.preferred_category)) {
+      if (data.preferred_category && ['barber', 'beauty', 'student', 'chiro'].includes(data.preferred_category)) {
         activeTab.value = data.preferred_category as any
       }
       return
@@ -361,6 +361,8 @@ const submitReservation = async () => {
             理容</button>
           <button class="tab-btn" :class="{ active: activeTab === 'beauty' }" @click="activeTab = 'beauty'">💇‍♀️
             美容</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'student' }" @click="activeTab = 'student'">🎓
+            学生<br>（中学まで）</button>
           <button class="tab-btn" :class="{ active: activeTab === 'chiro' }" @click="activeTab = 'chiro'">💆‍♂️
             カイロ</button>
         </div>
@@ -369,10 +371,10 @@ const submitReservation = async () => {
       <div class="menu-section-wrapper">
         <div class="menu-header">
           <h2 class="section-title">
-            {{ activeTab === 'barber' ? '理容メニュー' : (activeTab === 'beauty' ? '美容メニュー' : 'カイロプラクティック') }}
+            {{ activeTab === 'barber' ? '理容メニュー' : (activeTab === 'beauty' ? '美容メニュー' : (activeTab === 'student' ? '学生メニュー（中学生まで）' : 'カイロプラクティック')) }}
           </h2>
           <p class="section-desc">
-            {{ activeTab === 'chiro' ? '身体のメンテナンスメニューです' : 'ご希望のメニューを選択してください' }}
+            {{ activeTab === 'chiro' ? '身体のメンテナンスメニューです' : (activeTab === 'student' ? '中学生までの学生向けメニューです' : 'ご希望のメニューを選択してください') }}
           </p>
         </div>
         <ul class="menu-list">

@@ -19,10 +19,10 @@ const editTargetId = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const editForm = ref({
-  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], description: '', category: 'barber' as 'barber' | 'beauty' | 'chiro', order_priority: 10
+  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], description: '', category: 'barber' as 'barber' | 'beauty' | 'student' | 'chiro', order_priority: 10
 })
 
-const categories = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
+const categories = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'student', label: '🎓 学生（中学まで）' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
 
 const updateInclusive = () => { editForm.value.priceWithTax = calcTaxIncluded(editForm.value.price) }
 const updateExclusive = () => { editForm.value.price = calcTaxExcluded(editForm.value.priceWithTax) }
