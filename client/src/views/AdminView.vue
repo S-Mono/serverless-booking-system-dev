@@ -68,6 +68,7 @@ const newReservation = ref({
 // 顧客サジェスト用
 const suggestedCustomers = ref<Array<{ id: string; name_kana: string; phone_number: string }>>([])
 const showCustomerSuggestions = ref(false)
+const showNameSuggestions = ref(false)
 
 // 顧客登録モーダル用
 const showCustomerModal = ref(false)
@@ -561,6 +562,7 @@ const formatPhoneNumber = (value: string) => {
 const handlePhoneInput = async (event: Event) => {
   const input = event.target as HTMLInputElement
   newReservation.value.customer_phone = formatPhoneNumber(input.value)
+  showNameSuggestions.value = false
 
   // 電話番号から顧客を検索（10桁以上入力された場合）
   const phoneDigits = newReservation.value.customer_phone.replace(/\D/g, '')
@@ -603,28 +605,69 @@ const handlePhoneInput = async (event: Event) => {
           }
         })
         showCustomerSuggestions.value = true
+        showNameSuggestions.value = false
         console.log('✅ サジェスト表示ON', suggestedCustomers.value)
       } else {
         console.log('❌ 該当する顧客が見つかりませんでした')
         suggestedCustomers.value = []
         showCustomerSuggestions.value = false
+        showNameSuggestions.value = false
       }
     } catch (error) {
       console.error('❌ 顧客検索エラー:', error)
       suggestedCustomers.value = []
       showCustomerSuggestions.value = false
+      showNameSuggestions.value = false
     }
   } else {
     suggestedCustomers.value = []
     showCustomerSuggestions.value = false
+    showNameSuggestions.value = false
+  }
+}
+
+const handleNameInput = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const queryText = input.value.trim().replace(/\s/g, '')
+
+  if (queryText.length < 2) {
+    suggestedCustomers.value = []
+    showNameSuggestions.value = false
+    return
+  }
+
+  try {
+    const customersSnap = await getDocs(collection(db, 'customers'))
+    const matches = customersSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter((c: any) => !c.deleted_at)
+      .filter((c: any) => {
+        const nameKana = (c.name_kana || '').replace(/\s/g, '')
+        const nameKanji = (c.name_kanji || '').replace(/\s/g, '')
+        return nameKana.includes(queryText) || nameKanji.includes(queryText)
+      })
+      .slice(0, 5)
+
+    suggestedCustomers.value = matches.map((c: any) => ({
+      id: c.id,
+      name_kana: c.name_kana || c.name || '名前なし',
+      phone_number: c.phone_number || ''
+    }))
+    showNameSuggestions.value = suggestedCustomers.value.length > 0
+    showCustomerSuggestions.value = false
+  } catch (error) {
+    console.error('❌ 顧客検索エラー:', error)
+    suggestedCustomers.value = []
+    showNameSuggestions.value = false
   }
 }
 
 const selectCustomer = (customer: { id: string; name_kana: string; phone_number: string }) => {
   newReservation.value.customer_name = customer.name_kana
-  newReservation.value.customer_phone = customer.phone_number
+  newReservation.value.customer_phone = customer.phone_number ? formatPhoneNumber(customer.phone_number) : ''
   newReservation.value.customer_id = customer.id
   showCustomerSuggestions.value = false
+  showNameSuggestions.value = false
   console.log('✅ 顧客を選択:', customer.name_kana, '(ID:', customer.id, ')')
 }
 
@@ -776,9 +819,9 @@ const submitReservation = async () => {
           const customersSnap = await getDocs(collection(db, 'customers'))
           const isDuplicate = customersSnap.docs.some(doc => {
             const data = doc.data()
-            return data.phone_number === phoneNumberToSave && 
-                   data.name_kana === newReservation.value.customer_name &&
-                   !data.deleted_at
+            return data.phone_number === phoneNumberToSave &&
+              data.name_kana === newReservation.value.customer_name &&
+              !data.deleted_at
           })
 
           if (!isDuplicate) {
@@ -786,9 +829,9 @@ const submitReservation = async () => {
             const phoneOnlyDuplicates = customersSnap.docs
               .map(doc => ({ id: doc.id, ...doc.data() }))
               .filter((c: any) => {
-                return c.phone_number === phoneNumberToSave && 
-                       c.name_kana !== newReservation.value.customer_name &&
-                       !c.deleted_at
+                return c.phone_number === phoneNumberToSave &&
+                  c.name_kana !== newReservation.value.customer_name &&
+                  !c.deleted_at
               })
 
             // ダイアログメッセージを構築
@@ -1563,7 +1606,8 @@ const exportReservationsToExcel = async () => {
         </div>
         <div class="form-group">
           <label>メニュー <span style="color: #e74c3c;">*</span></label>
-          <select @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
+          <select
+            @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
             :class="{ 'input-error': validationErrors.menus }">
             <option value="">メニューを追加...</option>
             <option v-for="m in availableMenus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
@@ -1594,12 +1638,22 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
           <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
+          }}</span>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>
-          <input type="text" v-model="newReservation.customer_name"
-            :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
+          <div class="input-with-suggestions">
+            <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
+              :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
+            <div v-if="showNameSuggestions && suggestedCustomers.length > 0" class="customer-suggestions">
+              <div class="suggestion-header">👥 登録済みの顧客</div>
+              <div v-for="customer in suggestedCustomers" :key="customer.id" class="suggestion-item"
+                @click="selectCustomer(customer)">
+                <span class="customer-name">👤 {{ customer.name_kana }}</span>
+                <span class="customer-phone">📞 {{ customer.phone_number }}</span>
+              </div>
+            </div>
+          </div>
           <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
           <button class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
         </div>
