@@ -91,5 +91,11 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if true;  // 誰でも書き込み可能（エラー発生時に記録するため）
     }
+
+    // 🔍 【一時】LINE User ID ログ（確認後削除）
+    match /tmp_line_uid_log/{docId} {
+      allow read: if isAdmin();
+      allow create, update: if isAuthenticated();
+    }
   }
 }
