@@ -34,6 +34,71 @@ const createTransporter = () => {
   return nodemailer.createTransport(config);
 };
 
+/**
+ * LINE Messaging API を使って admin_line_users コレクションの全ユーザーに
+ * プッシュメッセージを送信する。
+ * 環境変数 LINE_MESSAGING_CHANNEL_ACCESS_TOKEN が必要。
+ * @param {string} text 送信するテキストメッセージ
+ * @param {string} reservationId ログ用の予約ID
+ */
+const sendLineMessageToAdmins = async (
+  text: string,
+  reservationId: string
+): Promise<void> => {
+  const messagingToken = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
+
+  if (!messagingToken) {
+    logger.warn(
+      "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN not configured, skipping LINE push"
+    );
+    return;
+  }
+
+  const db = admin.firestore();
+  const adminLineSnap = await db
+    .collection("admin_line_users")
+    .where("enabled", "==", true)
+    .get();
+
+  if (adminLineSnap.empty) {
+    logger.info("No admin LINE user IDs registered in admin_line_users", {
+      reservationId,
+    });
+    return;
+  }
+
+  // ドキュメントIDを LINE User ID として使用
+  const lineUserIds = adminLineSnap.docs.map((doc) => doc.id);
+
+  try {
+    await axios.post(
+      "https://api.line.me/v2/bot/message/multicast",
+      {
+        to: lineUserIds,
+        messages: [{type: "text", text}],
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${messagingToken}`,
+        },
+      }
+    );
+    logger.info("LINE multicast sent to admins", {
+      reservationId,
+      adminCount: lineUserIds.length,
+    });
+  } catch (error: unknown) {
+    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    logger.error("Failed to send LINE multicast", {
+      reservationId,
+      error: errorObj.message,
+      data: errorObj.response?.data,
+    });
+    // LINE送信失敗は致命的エラーとせず続行
+  }
+};
+
 // 予約が作成されたら発火するトリガー
 export const onReservationCreated = onDocumentCreated(
   {
@@ -92,86 +157,93 @@ export const onReservationCreated = onDocumentCreated(
     const tokensSnap = await db.collection("admin_tokens").get();
 
     if (tokensSnap.empty) {
-      logger.info("送信先トークンがありません");
-      return;
-    }
-
-    const tokens = tokensSnap.docs.map((doc) => doc.data().token);
-
-    // 一斉送信
-    // Extract click_action (link) and create a safe notification object
-    const clickAction = payload.notification?.click_action;
-    let safeNotification: admin.messaging.Notification | undefined;
-    if (payload.notification) {
-      safeNotification = {
-        title: payload.notification.title,
-        body: payload.notification.body,
-      };
+      logger.info("送信先FCMトークンがありません。LINE通知のみ実行します");
     } else {
-      safeNotification = undefined;
-    }
+      const tokens = tokensSnap.docs.map((doc) => doc.data().token);
 
-    const message: admin.messaging.MulticastMessage = {
-      tokens: tokens,
-      // only allowed notification fields (title, body, image) should go here
-      notification: safeNotification,
-      webpush: {
-        fcmOptions: {
-          link: clickAction,
-        },
-      },
-      // provide fallback to the data payload for clients that read data
-      // include reservationId so clients can deduplicate notifications
-      data: ((): { [key: string]: string } => {
-        const dataPayload: { [key: string]: string } = {
-          reservationId: String(snap.id || ""),
+      // 一斉送信
+      // Extract click_action (link) and create a safe notification object
+      const clickAction = payload.notification?.click_action;
+      let safeNotification: admin.messaging.Notification | undefined;
+      if (payload.notification) {
+        safeNotification = {
+          title: payload.notification.title,
+          body: payload.notification.body,
         };
-        if (clickAction) dataPayload.link = String(clickAction);
-        return dataPayload;
-      })(),
-    };
-    logger.info("Prepared multicast message", {
-      tokenCount: tokens.length,
-      hasLink: !!clickAction,
-    });
-
-    const response = await admin.messaging().sendEachForMulticast(message);
-    // ログ：送信結果のサマリを残しておく（トラブルシュート用）
-    try {
-      logger.info("sendEachForMulticast result", {
-        reservationId: snap.id || null,
-        successCount: response.successCount,
-        failureCount: response.failureCount,
-        total: response.responses.length,
-      });
-    } catch (e) {
-      logger.warn("Failed logging send result", e);
-    }
-
-    // エラーになったトークンをお掃除
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tokensToRemove: Promise<any>[] = [];
-
-    response.responses.forEach((res, index) => {
-      const error = res.error;
-      if (error) {
-        logger.error(
-          "Failure sending notification to",
-          tokens[index],
-          error
-        );
-        if (
-          error.code === "messaging/invalid-registration-token" ||
-          error.code === "messaging/registration-token-not-registered"
-        ) {
-          tokensToRemove.push(
-            db.collection("admin_tokens").doc(tokens[index]).delete()
-          );
-        }
+      } else {
+        safeNotification = undefined;
       }
-    });
 
-    await Promise.all(tokensToRemove);
+      const message: admin.messaging.MulticastMessage = {
+        tokens: tokens,
+        // only allowed notification fields (title, body, image) should go here
+        notification: safeNotification,
+        webpush: {
+          fcmOptions: {
+            link: clickAction,
+          },
+        },
+        // provide fallback to the data payload for clients that read data
+        // include reservationId so clients can deduplicate notifications
+        data: ((): { [key: string]: string } => {
+          const dataPayload: { [key: string]: string } = {
+            reservationId: String(snap.id || ""),
+          };
+          if (clickAction) dataPayload.link = String(clickAction);
+          return dataPayload;
+        })(),
+      };
+      logger.info("Prepared multicast message", {
+        tokenCount: tokens.length,
+        hasLink: !!clickAction,
+      });
+
+      const response = await admin.messaging().sendEachForMulticast(message);
+      // ログ：送信結果のサマリを残しておく（トラブルシュート用）
+      try {
+        logger.info("sendEachForMulticast result", {
+          reservationId: snap.id || null,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          total: response.responses.length,
+        });
+      } catch (e) {
+        logger.warn("Failed logging send result", e);
+      }
+
+      // エラーになったトークンをお掃除
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tokensToRemove: Promise<any>[] = [];
+
+      response.responses.forEach((res, index) => {
+        const error = res.error;
+        if (error) {
+          logger.error(
+            "Failure sending notification to",
+            tokens[index],
+            error
+          );
+          if (
+            error.code === "messaging/invalid-registration-token" ||
+            error.code === "messaging/registration-token-not-registered"
+          ) {
+            tokensToRemove.push(
+              db.collection("admin_tokens").doc(tokens[index]).delete()
+            );
+          }
+        }
+      });
+
+      await Promise.all(tokensToRemove);
+    } // end else (admin_tokens not empty)
+
+    // ── LINE Messaging API でも管理者に通知 ──────────────────────────
+    const lineText =
+      "🎉 新しい予約が入りました！\n\n" +
+      "📅 " + dateStr + "\n" +
+      "👤 " + customerName + "様\n" +
+      "✂️ " + menuName;
+    await sendLineMessageToAdmins(lineText, snap.id);
   }
 );
 
