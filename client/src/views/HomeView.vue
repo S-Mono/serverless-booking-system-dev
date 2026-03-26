@@ -435,7 +435,7 @@ const submitReservation = async () => {
           <div v-if="availableSlots.length > 0" class="slot-grid"><button v-for="time in availableSlots"
               :key="time.getTime()" class="slot-btn"
               :class="{ selected: selectedTime === formatTime(time) }" @click="selectTime(time)">{{
-                formatTime(time) }}</button></div>
+                selectedTime === formatTime(time) ? '✓ ' + formatTime(time) : formatTime(time) }}</button></div>
           <p v-else class="no-slots-msg">❌ この日の空き枠はありません</p>
         </div>
         <div class="form-group"><label>ご要望・メモ (任意)</label><textarea v-model="customerNote"
@@ -934,11 +934,13 @@ textarea {
 }
 
 .slot-btn.selected {
-  background: #4caf50;
-  color: white;
+  background: #1b5e20;
+  color: #ffffff;
   font-weight: bold;
-  border-color: #388e3c;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-size: 1rem;
+  border: 2px solid #1b5e20;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  transform: translateY(-2px);
 }
 
 .no-slots-msg {
