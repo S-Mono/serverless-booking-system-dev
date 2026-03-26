@@ -268,7 +268,7 @@ const toggleMenu = (menu: Menu) => {
   else selectedMenus.value.splice(index, 1)
 }
 const isSelected = (menu: Menu) => selectedMenus.value.some(m => m.id === menu.id)
-const formatTime = (date: Date) => `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+const formatTime = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 const formatDateJP = (dateStr: string) => { if (!dateStr) return ''; const d = new Date(dateStr); return `${d.getMonth() + 1}月${d.getDate()}日` }
 
 const submitReservation = async () => {
