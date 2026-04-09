@@ -22,7 +22,7 @@ const goBack = () => {
                 <h2>事業者情報</h2>
                 <p>
                     <strong>事業者名:</strong> ヘアーサロン ジョイス<br>
-                    <strong>所在地:</strong> 北海道札幌市<br>
+                    <strong>所在地:</strong> 北海道札幌市手稲区星置１条３丁目３番１号<br>
                     <strong>電話番号:</strong> 011-694-5449<br>
                     <strong>メールアドレス:</strong> monou1222@icloud.com
                 </p>

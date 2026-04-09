@@ -1,13 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
-import LoginView from '../views/LoginView.vue'
-import MyPageView from '../views/MyPageView.vue'
-import AdminView from '../views/AdminView.vue'
-import AdminSettingsView from '../views/AdminSettingsView.vue'
-import AdminMenuSettingsView from '../views/AdminMenuSettingsView.vue'
-import AdminLoginView from '../views/AdminLoginView.vue'
-import ForgotPasswordView from '../views/ForgotPasswordView.vue'
-import ResetPasswordView from '../views/ResetPasswordView.vue'
 import { auth } from '../lib/firebase'
 import { getIdTokenResult, signOut } from 'firebase/auth'
 
@@ -19,26 +10,26 @@ const router = createRouter({
     { 
       path: '/',
       name: 'home',
-      component: HomeView 
+      component: () => import('../views/HomeView.vue')
     },
     { 
       path: '/login',
       name: 'login',
-      component: LoginView },
+      component: () => import('../views/LoginView.vue') },
     {
       path: '/forgot-password',
       name: 'forgot-password',
-      component: ForgotPasswordView
+      component: () => import('../views/ForgotPasswordView.vue')
     },
     {
       path: '/reset-password',
       name: 'reset-password',
-      component: ResetPasswordView
+      component: () => import('../views/ResetPasswordView.vue')
     },
     { 
       path: '/mypage', 
       name: 'mypage',
-      component: MyPageView,
+      component: () => import('../views/MyPageView.vue'),
       meta: { requiresAuth: true } // 🟢 認証必須
     },
     {
@@ -68,24 +59,24 @@ const router = createRouter({
     {
       path: '/admin-login',
       name: 'admin-login',
-      component: AdminLoginView
+      component: () => import('../views/AdminLoginView.vue')
     },
     {
       path: '/admin',
       name: 'admin',
-      component: AdminView,
+      component: () => import('../views/AdminView.vue'),
       meta: { requiresAdmin: true }
     },
     {
       path: '/admin/settings',
       name: 'admin-settings',
-      component: AdminSettingsView,
+      component: () => import('../views/AdminSettingsView.vue'),
       meta: { requiresAdmin: true }
     },
     {
       path: '/admin/settings/menus',
       name: 'admin-menu-settings',
-      component: AdminMenuSettingsView,
+      component: () => import('../views/AdminMenuSettingsView.vue'),
       meta: { requiresAdmin: true }
     },
     {
@@ -180,10 +171,10 @@ router.beforeEach(async (to, from, next) => {
       return next('/admin-login')
     }
 
-    // トークンのカスタムクレームに is_admin フラグがあるかを確認
+    // トークンのカスタムクレームに admin フラグがあるかを確認
     try {
       const idTokenResult = await getIdTokenResult(user)
-      if (!idTokenResult.claims || !idTokenResult.claims.is_admin) {
+      if (!idTokenResult.claims || !idTokenResult.claims.admin) {
         // 管理者権限がないならアクセス拒否
         console.warn('管理者権限がありません')
         return next('/admin-login')

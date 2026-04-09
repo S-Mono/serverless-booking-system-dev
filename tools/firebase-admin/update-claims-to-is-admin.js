@@ -12,7 +12,7 @@ const userIds = [
 ];
 
 async function updateCustomClaims() {
-  console.log('Updating custom claims to is_admin...\n');
+  console.log('Updating custom claims to admin...\n');
   
   for (const uid of userIds) {
     try {
@@ -21,8 +21,8 @@ async function updateCustomClaims() {
       console.log(`User: ${user.email || uid}`);
       console.log(`  Before: ${JSON.stringify(user.customClaims)}`);
       
-      // is_admin に更新
-      await admin.auth().setCustomUserClaims(uid, { is_admin: true });
+      // admin に更新（is_admin から切り替え）
+      await admin.auth().setCustomUserClaims(uid, { admin: true });
       
       // 確認
       const updatedUser = await admin.auth().getUser(uid);

@@ -92,7 +92,7 @@ onMounted(() => { fetchDeletedCustomers() })
                                 </td>
                             </tr>
                             <tr v-if="deletedCustomers.length === 0">
-                                <td colspan="4" class="no-data">削除済み顧客はいません</td>
+                                <td colspan="4" class="no-data">削除済みの顧客はありません</td>
                             </tr>
                         </tbody>
                     </table>
@@ -111,7 +111,7 @@ onMounted(() => { fetchDeletedCustomers() })
     overflow: hidden;
 }
 
-/* 削除済み画面はヘッダー色を変えて分かりやすく */
+/* 削除済み顧客画面はヘッダー色を変えて分かりやすく */
 .trash-header {
     background: #7f8c8d;
     color: white;

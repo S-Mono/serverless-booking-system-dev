@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
-import * as XLSX from 'xlsx'
 
 interface Reservation {
     id: string
@@ -239,8 +238,9 @@ const togglePastData = async () => {
 }
 
 // Excelエクスポート機能
-const exportToExcel = () => {
+const exportToExcel = async () => {
     // ワークブックを作成
+    const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new()
 
     // 現在の期間のシート

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, db } from '../lib/firebase'
 import {
@@ -13,10 +13,12 @@ import {
   browserLocalPersistence,
   type User
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, Timestamp, collection, query, where, getDocs, limit } from 'firebase/firestore'
+import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import liff from '@line/liff'
+import { useLineAuthStore } from '../stores/lineAuth'
 
 const router = useRouter()
+const lineAuthStore = useLineAuthStore()
 
 const isLoginMode = ref(true)
 const phoneNumber = ref('')
@@ -26,11 +28,8 @@ const message = ref('')
 // social 認証専用の状態 (google | line) を保持します。
 const socialAuth = ref<string | null>(null)
 const miniAppLoading = ref(true)
-const isLineApp = ref(false)
-const showCustomerSelection = ref(false)
-const customerCandidates = ref<Array<{ id: string; name_kana: string; email?: string; provider?: string }>>([])
-const selectedCustomerId = ref<string | null>(null)
-const pendingPassword = ref('')
+// isLineAppはStoreから取得（2重管理を避ける）
+const isLineApp = computed(() => lineAuthStore.isLineApp)
 
 const PSEUDO_DOMAIN = '@local.booking-system'
 const LINE_DOMAIN = '@line.booking-system'
@@ -91,83 +90,75 @@ const createCustomerData = async (user: User, provider: 'google' | 'line' | 'pho
 }
 
 onMounted(async () => {
-  // 1. LINEアプリ判定
-  if (/Line/i.test(navigator.userAgent)) {
-    isLineApp.value = true
-  }
+  console.log('=== LoginView.vue mounted ===')
+  console.log('User agent:', navigator.userAgent)
+  console.log('Mini app ID:', import.meta.env.VITE_MINI_APP_ID)
 
-  // 2. Googleリダイレクト復帰チェック
+  // 1. Googleリダイレクト復帰チェック
+  console.log('Checking Google redirect result...')
   try {
     const result = await getRedirectResult(auth)
     if (result) {
+      console.log('Google redirect result found:', result.user.uid)
       await createCustomerData(result.user, 'google')
       router.push('/')
       return
     }
+    console.log('No Google redirect result')
   } catch (error: any) {
     if (error.code !== 'auth/popup-closed-by-user') {
-      console.error(error)
+      console.error('Google redirect error:', error)
     }
   }
 
-  // 3. LINEミニアプリ初期化
-  try {
-    const miniAppId = import.meta.env.VITE_MINI_APP_ID
-    if (miniAppId) {
-      console.log('Initializing LINE Mini App:', miniAppId)
-      await liff.init({ liffId: miniAppId })
+  // 2. LINEミニアプリ自動ログイン（Storeで既に初期化済み）
+  console.log('Checking LINE auth state from store...')
+  console.log('LINE auth initialized:', lineAuthStore.isInitialized)
+  console.log('Is LINE app:', lineAuthStore.isLineApp)
 
-      console.log('LIFF initialized successfully')
-      console.log('liff.isInClient():', liff.isInClient())
-      console.log('liff.isLoggedIn():', liff.isLoggedIn())
+  if (lineAuthStore.isInitialized && lineAuthStore.isLineApp) {
+    // Storeで既にLIFFが初期化されている
+    console.log('LIFF already initialized by store')
+    console.log('isInClient:', liff.isInClient())
+    console.log('isLoggedIn:', liff.isLoggedIn())
 
-      if (liff.isInClient()) {
-        isLineApp.value = true
-        console.log('Running in LINE app')
-
-        // ログアウト直後かチェック（5秒以内なら自動ログインをスキップ）
-        const logoutFlag = localStorage.getItem('logout_flag')
-        const now = Date.now()
-        if (logoutFlag && now - parseInt(logoutFlag) < 5000) {
-          console.log('Recently logged out, skipping auto-login')
-          localStorage.removeItem('logout_flag')
-          // 【一時ログ】自動ログインをスキップしても LINE User ID だけ記録
-          try {
-            if (liff.isLoggedIn()) {
-              const profile = await liff.getProfile()
-              await setDoc(doc(db, 'tmp_line_uid_log', profile.userId), {
-                lineUserId: profile.userId,
-                displayName: profile.displayName,
-                logged_at: Timestamp.now()
-              })
-            }
-          } catch (e) { /* ignore */ }
-        } else {
-          // ミニアプリは自動ログイン状態のため、すぐに認証処理
-          if (liff.isLoggedIn()) {
-            console.log('Already logged in, attempting auto-login...')
-            // 自動ログイン処理を実行
-            await autoLoginWithLine()
-          } else {
-            console.warn('Not logged in in LINE app - this should not happen in Mini App')
-          }
+    // ログアウト直後かチェック（5秒以内なら自動ログインをスキップ）
+    const logoutFlag = localStorage.getItem('logout_flag')
+    const now = Date.now()
+    if (logoutFlag && now - parseInt(logoutFlag) < 5000) {
+      console.log('Logout flag detected, skipping auto login')
+      localStorage.removeItem('logout_flag')
+      miniAppLoading.value = false
+      // 【一時ログ】自動ログインをスキップしても LINE User ID だけ記録
+      // try {
+      //   if (liff.isLoggedIn()) {
+      //     const profile = await liff.getProfile()
+      //     await setDoc(doc(db, 'tmp_line_uid_log', profile.userId), {
+      //       lineUserId: profile.userId,
+      //       displayName: profile.displayName,
+      //       logged_at: Timestamp.now()
+      //     })
+      //   }
+      // } catch (e) { /* ignore */ }
+    } else {
+      // ミニアプリは自動ログイン状態のため、すぐに認証処理
+      if (liff.isLoggedIn()) {
+        console.log('LIFF logged in, starting auto login...')
+        try {
+          await autoLoginWithLine()
+        } catch (error: any) {
+          console.error('Auto login failed:', error)
+          message.value = `LINE自動ログイン失敗: ${error.message || 'エラーが発生しました'}`
+          miniAppLoading.value = false
         }
       } else {
-        console.log('Not running in LINE app (browser or other)')
+        console.log('LIFF not logged in')
+        miniAppLoading.value = false
       }
-    } else {
-      console.warn('VITE_MINI_APP_ID is not defined')
     }
-  } catch (error: any) {
-    console.error('LINE Mini App init failed', error)
-    // LIFF初期化失敗時もログイン画面を表示
-    isLineApp.value = false
-    // エラーメッセージを表示（デバッグ用）
-    if (error.code) {
-      console.error('LIFF Error Code:', error.code)
-      message.value = `LINE連携エラー: ${error.code}`
-    }
-  } finally {
+  } else {
+    // LINEアプリではない、または初期化失敗
+    console.log('Not in LINE app or LIFF init failed')
     miniAppLoading.value = false
   }
 })
@@ -183,6 +174,19 @@ const autoLoginWithLine = async () => {
     message.value = 'LINEアカウントで認証中...'
 
     await setPersistence(auth, browserLocalPersistence)
+
+    // チャネル同意の簡略化対応: profileスコープの権限を確認・要求
+    console.log('Checking and requesting profile permission...')
+    const permissionStatus = await liff.permission.query('profile')
+    console.log('Profile permission status:', permissionStatus.state)
+
+    if (permissionStatus.state === 'prompt') {
+      // 権限がない場合、ユーザーに許可を求める
+      console.log('Requesting profile permission...')
+      await liff.permission.requestAll()
+      console.log('Permission granted')
+    }
+
     console.log('Getting LINE profile...')
     const profile = await liff.getProfile()
     console.log('LINE profile:', profile)
@@ -214,23 +218,45 @@ const autoLoginWithLine = async () => {
 
     console.log('Creating customer data...')
     await createCustomerData(user, 'line', lineName, lineName)
+    console.log('Customer data created successfully')
 
     // 【一時ログ】LINE User ID を Firestore に記録（確認後削除）
-    await setDoc(doc(db, 'tmp_line_uid_log', lineUserId), {
-      lineUserId,
-      displayName: lineName,
-      firebaseUid: user.uid,
-      logged_at: Timestamp.now()
-    })
+    // await setDoc(doc(db, 'tmp_line_uid_log', lineUserId), {
+    //   lineUserId,
+    //   displayName: lineName,
+    //   firebaseUid: user.uid,
+    //   logged_at: Timestamp.now()
+    // })
 
     // 成功時はオーバーレイをクリアしてから遷移
     console.log('Login successful, redirecting to /')
     socialAuth.value = null
     router.push('/')
   } catch (error: any) {
-    console.error('Auto login failed:', error)
-    message.value = `LINE自動ログイン失敗: ${error.message}`
+    console.error('=== Auto login failed ===', error)
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    })
+
+    // アクセストークンが無効な場合、LIFFログアウトして再ログインを促す
+    if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-disabled') {
+      console.log('Access token may be invalid, clearing LIFF session...')
+      lineAuthStore.logout()
+      message.value = 'アクセストークンが無効です。再度ログインしてください。'
+      miniAppLoading.value = false
+      socialAuth.value = null
+      return
+    }
+
+    // エラーレポート送信
+    const { reportLiffError } = await import('../lib/errorReporter')
+    reportLiffError(error, 'login')
+
+    message.value = `LINE自動ログイン失敗 [${error.code || 'UNKNOWN'}]: ${error.message || 'エラーの詳細が不明です'}`
     socialAuth.value = null
+    miniAppLoading.value = false
   }
 }
 
@@ -287,112 +313,21 @@ const loginWithGoogle = async () => {
 const handleAuth = async () => {
   loading.value = true
   message.value = ''
-
   try {
     await setPersistence(auth, browserLocalPersistence)
-
-    // ハイフンを除去した電話番号
-    const cleanPhone = phoneNumber.value.replace(/[^0-9]/g, '')
-
-    console.log('ログイン試行:', {
-      入力値: phoneNumber.value,
-      正規化後: cleanPhone,
-      検索用: cleanPhone
-    })
-
+    // 電話番号からハイフンを除去
+    const phoneNumberDigits = phoneNumber.value.replace(/[^0-9]/g, '')
+    const pseudoEmail = `${phoneNumberDigits}${PSEUDO_DOMAIN}`
+    let user: User
     if (isLoginMode.value) {
-      // ログインモード：customersコレクションから電話番号で検索
-      // ハイフンなしとハイフン付き両方で検索を試みる
-      const customersRef = collection(db, 'customers')
-      let q = query(customersRef, where('phone_number', '==', cleanPhone), limit(20))
-      let snapshot = await getDocs(q)
-
-      // ハイフンなしで見つからなければ、ハイフン付きで検索
-      if (snapshot.empty) {
-        console.log('ハイフンなしで見つからず、ハイフン付きで再検索:', phoneNumber.value)
-        q = query(customersRef, where('phone_number', '==', phoneNumber.value), limit(20))
-        snapshot = await getDocs(q)
-      }
-
-      console.log('検索結果:', {
-        件数: snapshot.size,
-        該当: snapshot.docs.map(doc => ({
-          id: doc.id,
-          phone: doc.data().phone_number,
-          email: doc.data().email,
-          provider: doc.data().provider
-        }))
-      })
-
-      if (snapshot.empty) {
-        // 電話番号が登録されていない場合、従来の方式でログイン試行
-        const pseudoEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
-        const cred = await signInWithEmailAndPassword(auth, pseudoEmail, password.value)
-        await createCustomerData(cred.user, 'phone')
-        router.push('/')
-      } else if (snapshot.size === 1) {
-        // 1件のみの場合、直接認証
-        const customer = snapshot.docs[0]
-        const customerData = customer?.data()
-
-        if (!customer || !customerData) {
-          message.value = 'ログインエラー: 顧客データが見つかりません'
-          loading.value = false
-          return
-        }
-
-        // providerに基づいてFirebase Authのメールアドレスを決定
-        let firebaseEmail: string
-        if (customerData.provider === 'phone') {
-          // 電話番号ベースのユーザーは擬似メールアドレスを使用
-          firebaseEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
-        } else if (customerData.provider === 'line') {
-          // LINEユーザーはLINEドメインのメールアドレス
-          firebaseEmail = customerData.email || `line_${customer.id}${LINE_DOMAIN}`
-        } else if (customerData.provider === 'google') {
-          // GoogleユーザーはGoogleのメールアドレス
-          firebaseEmail = customerData.email || ''
-        } else {
-          // その他の場合は電話番号ベースを試す
-          firebaseEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
-        }
-
-        if (!firebaseEmail) {
-          message.value = 'この顧客のメールアドレスが取得できません'
-          return
-        }
-
-        console.log('認証試行:', { firebaseEmail, phone: cleanPhone, provider: customerData.provider })
-
-        try {
-          await signInWithEmailAndPassword(auth, firebaseEmail, password.value)
-          router.push('/')
-        } catch (error: any) {
-          console.error('認証エラー:', error)
-          if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            message.value = 'パスワードが違います'
-          } else {
-            throw error
-          }
-        }
-      } else {
-        // 複数件の場合、顧客選択画面を表示
-        customerCandidates.value = snapshot.docs.map(doc => ({
-          id: doc.id,
-          name_kana: doc.data().name_kana || '名前未設定',
-          email: doc.data().email,
-          provider: doc.data().provider
-        }))
-        pendingPassword.value = password.value
-        showCustomerSelection.value = true
-      }
+      const cred = await signInWithEmailAndPassword(auth, pseudoEmail, password.value)
+      user = cred.user
     } else {
-      // 新規登録モード：従来通り
-      const pseudoEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
       const cred = await createUserWithEmailAndPassword(auth, pseudoEmail, password.value)
-      await createCustomerData(cred.user, 'phone')
-      router.push('/')
+      user = cred.user
     }
+    await createCustomerData(user, 'phone')
+    router.push('/')
   } catch (error: any) {
     console.error(error)
     if (error.code === 'auth/invalid-email') message.value = '電話番号の形式が正しくありません'
@@ -404,89 +339,13 @@ const handleAuth = async () => {
     loading.value = false
   }
 }
-
-// 顧客選択後の認証処理
-const authenticateSelectedCustomer = async () => {
-  if (!selectedCustomerId.value) {
-    message.value = '顧客を選択してください'
-    return
-  }
-
-  loading.value = true
-  message.value = ''
-
-  try {
-    const selectedCustomer = customerCandidates.value.find(c => c.id === selectedCustomerId.value)
-    if (!selectedCustomer) {
-      throw new Error('顧客が見つかりません')
-    }
-
-    const cleanPhone = phoneNumber.value.replace(/[^0-9]/g, '')
-
-    // providerに基づいてFirebase Authのメールアドレスを決定
-    let firebaseEmail: string
-    if (selectedCustomer.provider === 'phone') {
-      // 電話番号ベースのユーザーは擬似メールアドレスを使用
-      firebaseEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
-    } else if (selectedCustomer.provider === 'line') {
-      // LINEユーザーはLINEドメインのメールアドレス
-      firebaseEmail = selectedCustomer.email || `line_${selectedCustomer.id}${LINE_DOMAIN}`
-    } else if (selectedCustomer.provider === 'google') {
-      // GoogleユーザーはGoogleのメールアドレス
-      firebaseEmail = selectedCustomer.email || ''
-    } else {
-      // その他の場合は電話番号ベースを試す
-      firebaseEmail = `${cleanPhone}${PSEUDO_DOMAIN}`
-    }
-
-    if (!firebaseEmail) {
-      message.value = 'この顧客のメールアドレスが取得できません'
-      loading.value = false
-      return
-    }
-
-    console.log('選択された顧客で認証試行:', { firebaseEmail, name: selectedCustomer.name_kana, provider: selectedCustomer.provider })
-
-    try {
-      await signInWithEmailAndPassword(auth, firebaseEmail, pendingPassword.value)
-      router.push('/')
-    } catch (error: any) {
-      console.error('Authentication error:', error)
-      // 認証失敗時は選択画面を閉じてログイン画面に戻る
-      showCustomerSelection.value = false
-      selectedCustomerId.value = null
-      customerCandidates.value = []
-      pendingPassword.value = ''
-
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        message.value = 'パスワードが違います'
-      } else {
-        message.value = `認証エラー: ${error.message}`
-      }
-    }
-  } catch (error: any) {
-    console.error(error)
-    message.value = `エラー: ${error.message}`
-  } finally {
-    loading.value = false
-  }
-}
-
-// 顧客選択をキャンセル
-const cancelCustomerSelection = () => {
-  showCustomerSelection.value = false
-  selectedCustomerId.value = null
-  customerCandidates.value = []
-  pendingPassword.value = ''
-  message.value = ''
-}
 </script>
 
 <template>
   <div class="auth-container">
     <h2>{{ isLoginMode ? 'ログイン' : '新規会員登録' }}</h2>
 
-    <div v-if="miniAppLoading" class="loading-text">LINE連携を確認中...</div>
+    <!-- LINE連携確認中の表示を廃止 -->
 
     <div class="social-login">
       <button v-if="isLineApp" class="line-login-btn" @click="loginWithLine" :disabled="loading">
@@ -534,39 +393,6 @@ const cancelCustomerSelection = () => {
         {{ isLoginMode ? '新規登録' : 'ログイン' }}
       </a>
     </p>
-
-    <!-- 顧客選択モーダル -->
-    <Teleport to="body">
-      <div v-if="showCustomerSelection" class="modal-overlay" @click.self="cancelCustomerSelection">
-        <div class="modal-content customer-selection-modal">
-          <div class="modal-header">
-            <h3>ユーザーを選択してください</h3>
-            <button class="close-btn" @click="cancelCustomerSelection">×</button>
-          </div>
-          <div class="modal-body">
-            <p class="modal-description">
-              同じ電話番号で登録されている複数のアカウントが見つかりました。<br>
-              ログインするアカウントを選択してください。
-            </p>
-            <div class="customer-list">
-              <label v-for="customer in customerCandidates" :key="customer.id" class="customer-item"
-                :class="{ selected: selectedCustomerId === customer.id }">
-                <input type="radio" :value="customer.id" v-model="selectedCustomerId" name="customer" />
-                <span class="customer-name">{{ customer.name_kana }}</span>
-              </label>
-            </div>
-          </div>
-          <div class="modal-actions">
-            <button @click="cancelCustomerSelection" class="cancel-btn-modal" :disabled="loading">
-              キャンセル
-            </button>
-            <button @click="authenticateSelectedCustomer" class="submit-btn" :disabled="loading || !selectedCustomerId">
-              {{ loading ? '認証中...' : 'ログイン' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -591,21 +417,6 @@ h2 {
   color: #666;
   font-size: 0.8rem;
   margin-bottom: 1rem;
-}
-
-.forgot-password {
-  text-align: center;
-  margin-top: 1rem;
-  font-size: 0.9rem;
-}
-
-.forgot-password a {
-  color: #667eea;
-  text-decoration: none;
-}
-
-.forgot-password a:hover {
-  text-decoration: underline;
 }
 
 .social-login {
@@ -738,6 +549,21 @@ input {
   text-align: center;
 }
 
+.forgot-password {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.forgot-password a {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.forgot-password a:hover {
+  text-decoration: underline;
+}
+
 .toggle-mode {
   margin-top: 1.5rem;
   font-size: 0.9rem;
@@ -795,141 +621,5 @@ input {
   to {
     transform: rotate(360deg);
   }
-}
-
-/* 顧客選択モーダル */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  padding: 1rem;
-}
-
-.modal-content {
-  background: white;
-  border-radius: 8px;
-  width: 100%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  color: #333;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  color: #999;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s;
-}
-
-.close-btn:hover {
-  color: #333;
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
-.modal-description {
-  color: #666;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  margin-bottom: 1.5rem;
-}
-
-.customer-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.customer-item {
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.customer-item:hover {
-  border-color: #4CAF50;
-  background-color: #f9f9f9;
-}
-
-.customer-item.selected {
-  border-color: #4CAF50;
-  background-color: #e8f5e9;
-}
-
-.customer-item input[type="radio"] {
-  margin-right: 0.75rem;
-  cursor: pointer;
-  width: 18px;
-  height: 18px;
-}
-
-.customer-name {
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: #333;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid #e0e0e0;
-}
-
-.cancel-btn-modal {
-  background: white;
-  border: 1px solid #ddd;
-  color: #666;
-  padding: 0.75rem 1.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: all 0.2s;
-}
-
-.cancel-btn-modal:hover {
-  background: #f5f5f5;
-}
-
-.cancel-btn-modal:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 </style>

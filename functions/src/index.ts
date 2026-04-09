@@ -1,16 +1,56 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
-// import {onObjectFinalized} from "firebase-functions/v2/storage";
+import {onObjectFinalized} from "firebase-functions/v2/storage";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
 import axios from "axios";
-// import * as path from "path";
-// import * as os from "os";
-// import * as fs from "fs";
 
 admin.initializeApp();
+
+/**
+ * JWTを生成してチャネルアクセストークンv2.1を取得
+ */
+/**
+ * 短期のチャネルアクセストークンを取得
+ * client_idとclient_secretを使用（JWTアサーション不要）
+ */
+const getLineChannelAccessToken = async (): Promise<string | null> => {
+  try {
+    const channelId = process.env.LINE_CHANNEL_ID;
+    const channelSecret = process.env.LINE_CHANNEL_SECRET;
+
+    if (!channelId || !channelSecret) {
+      logger.warn("LINE credentials not configured");
+      return null;
+    }
+
+    logger.info("Obtaining short-lived channel access token");
+
+    const response = await axios.post(
+      "https://api.line.me/oauth2/v3/token",
+      new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: channelId,
+        client_secret: channelSecret,
+      }),
+      {
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      }
+    );
+
+    logger.info("Channel access token obtained successfully");
+    return response.data.access_token;
+  } catch (error: unknown) {
+    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    logger.error("Failed to get channel access token", {
+      error: errorObj.message,
+      data: errorObj.response?.data,
+    });
+    return null;
+  }
+};
 
 // メール送信用のトランスポーター設定
 const createTransporter = () => {
@@ -384,54 +424,60 @@ export const deleteUserAccount = onCall(
 
       // 1. LINE連携解除（権限取り消し）
       try {
-        // ユーザードキュメントからLINE情報を取得
-        const customerDoc = await db.collection("customers").doc(userId).get();
-        const customerData = customerDoc.data();
+        // クライアント側から送信されたユーザーアクセストークン
+        const userAccessToken = request.data?.lineAccessToken;
 
-        if (customerData?.line_user_id) {
-          const lineUserId = customerData.line_user_id;
-          const channelId = process.env.LINE_CHANNEL_ID;
-          const channelSecret = process.env.LINE_CHANNEL_SECRET;
+        logger.info("LINE deauthorization attempt", {
+          userId,
+          hasToken: !!userAccessToken,
+          tokenLength: userAccessToken?.length || 0,
+        });
 
-          if (!channelId || !channelSecret) {
-            logger.warn("LINE credentials not configured");
+        if (userAccessToken) {
+          // JWTを使ってチャネルアクセストークンを取得
+          logger.info("Obtaining channel access token via JWT...");
+          const channelAccessToken = await getLineChannelAccessToken();
+
+          if (!channelAccessToken) {
+            logger.warn("Failed to obtain channel access token");
           } else {
-            // チャネルアクセストークン取得
-            const tokenResponse = await axios.post(
-              "https://api.line.me/oauth2/v2.1/token",
-              new URLSearchParams({
-                grant_type: "client_credentials",
-                client_id: channelId,
-                client_secret: channelSecret,
-              }),
+            logger.info("Channel access token obtained successfully");
+
+            // ユーザーが認可した権限を取り消す
+            const deauthorizeResponse = await axios.post(
+              "https://api.line.me/user/v1/deauthorize",
               {
-                headers: {"Content-Type": "application/x-www-form-urlencoded"},
+                userAccessToken: userAccessToken,
+              },
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${channelAccessToken}`,
+                },
               }
             );
 
-            const accessToken = tokenResponse.data.access_token;
-
-            // LINE権限取り消しAPI呼び出し
-            await axios.post(
-              "https://api.line.me/oauth2/v2.1/revoke",
-              new URLSearchParams({
-                access_token: accessToken,
-                client_id: channelId,
-                client_secret: channelSecret,
-              }),
-              {
-                headers: {"Content-Type": "application/x-www-form-urlencoded"},
-              }
-            );
-
-            logger.info("LINE authorization revoked", {userId, lineUserId});
+            logger.info("LINE authorization revoked successfully", {
+              userId,
+              status: deauthorizeResponse.status,
+              statusText: deauthorizeResponse.statusText,
+            });
           }
+        } else {
+          logger.warn(
+            "No LINE access token provided, skipping deauthorization"
+          );
         }
       } catch (lineError: unknown) {
-        const errorObj = lineError as {message?: string};
+        const errorObj = lineError as {
+          message?: string;
+          response?: {status?: number; data?: unknown};
+        };
         logger.error("Failed to revoke LINE authorization", {
           userId,
           error: errorObj.message,
+          status: errorObj.response?.status,
+          data: errorObj.response?.data,
         });
         // LINE連携解除に失敗してもアカウント削除は続行
       }
@@ -506,6 +552,250 @@ export const deleteUserAccount = onCall(
     }
   }
 );
+
+/**
+ * パスワードリセットリクエストが作成されたらメールを送信
+ */
+export const onPasswordResetRequest = onDocumentCreated(
+  {
+    document: "password_reset_requests/{requestId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) {
+      logger.warn("No document data in password reset request");
+      return;
+    }
+
+    const resetData = snap.data();
+    const token = resetData.token;
+    const email = resetData.email;
+    const customerName = resetData.name_kana || "お客様";
+
+    logger.info("Password reset request received", {
+      email,
+      customerName,
+      requestId: snap.id,
+    });
+
+    // リセットURL（開発環境のドメインに変更してください）
+    const baseUrl = process.env.APP_URL || "http://localhost:5173";
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+    logger.info("Sending password reset email", {resetUrl});
+
+    // Gmail SMTPでメール送信
+    const transporter = createTransporter();
+    const fromEmail = process.env.SMTP_USER || "noreply@example.com";
+
+    const mailOptions = {
+      from: fromEmail,
+      to: email,
+      subject: "パスワード再設定のご案内",
+      text: `${customerName}様\n\n` +
+        "パスワード再設定のリクエストを受け付けました。\n" +
+        "以下のURLからパスワードを再設定してください。\n\n" +
+        `${resetUrl}\n\n` +
+        "このリンクの有効期限は10分間です。\n" +
+        "※このメールに心当たりがない場合は、無視してください。",
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; 
+                    margin: 0 auto; padding: 20px;">
+          <h2 style="color: #333;">パスワード再設定のご案内</h2>
+          <p>${customerName}様</p>
+          <p>パスワード再設定のリクエストを受け付けました。</p>
+          <p>以下のボタンからパスワードを再設定してください。</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetUrl}" 
+               style="background: #667eea; color: white; 
+                      padding: 12px 30px; text-decoration: none; 
+                      border-radius: 6px; display: inline-block; 
+                      font-weight: bold;">
+              パスワードを再設定する
+            </a>
+          </div>
+          <p style="font-size: 0.9em; color: #666;">
+            またはこちらのURLをコピーしてブラウザに貼り付けてください:<br/>
+            <span style="word-break: break-all; color: #667eea;">
+              ${resetUrl}
+            </span>
+          </p>
+          <p style="font-size: 0.9em; color: #666;">
+            このリンクの有効期限は10分間です。
+          </p>
+          <p style="font-size: 0.9em; color: #666;">
+            ※このメールに心当たりがない場合は、無視してください。
+          </p>
+          <hr style="margin: 30px 0; border: none; 
+                     border-top: 1px solid #eee;">
+          <p style="font-size: 0.8em; color: #999;">
+            このメールは自動送信されています。返信できません。
+          </p>
+        </div>
+      `,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      logger.info("Password reset email sent successfully", {
+        email,
+        requestId: snap.id,
+      });
+    } catch (error: unknown) {
+      const errorObj = error as {message?: string; stack?: string};
+      logger.error("Failed to send password reset email", {
+        error: errorObj.message,
+        stack: errorObj.stack,
+        email,
+      });
+    }
+  }
+);
+
+/**
+ * 管理者が顧客のパスワードを変更
+ */
+export const adminUpdatePassword = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const {uid, newPassword} = request.data;
+
+    if (!uid || !newPassword) {
+      throw new HttpsError(
+        "invalid-argument",
+        "uid and newPassword are required"
+      );
+    }
+
+    // 管理者権限チェック
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication required");
+    }
+
+    const callerUid = request.auth.uid;
+    const callerDoc = await admin
+      .firestore()
+      .collection("customers")
+      .doc(callerUid)
+      .get();
+
+    if (!callerDoc.exists || callerDoc.data()?.role !== "admin") {
+      throw new HttpsError(
+        "permission-denied",
+        "Admin permission required"
+      );
+    }
+
+    try {
+      await admin.auth().updateUser(uid, {
+        password: newPassword,
+      });
+
+      logger.info("Admin updated user password", {
+        adminUid: callerUid,
+        targetUid: uid,
+      });
+
+      return {success: true};
+    } catch (error: unknown) {
+      const errorObj = error as {message?: string};
+      logger.error("Failed to update user password", {
+        error: errorObj.message,
+        targetUid: uid,
+      });
+      throw new HttpsError("internal", "Failed to update password");
+    }
+  }
+);
+
+/**
+ * トークンを使用してパスワードをリセット
+ */
+export const resetPasswordWithToken = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const {token, newPassword} = request.data;
+
+    if (!token || !newPassword) {
+      throw new HttpsError(
+        "invalid-argument",
+        "token and newPassword are required"
+      );
+    }
+
+    if (newPassword.length < 6) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Password must be at least 6 characters"
+      );
+    }
+
+    try {
+      // トークンを検証
+      const resetQuery = await admin
+        .firestore()
+        .collection("password_reset_requests")
+        .where("token", "==", token)
+        .where("used", "==", false)
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .get();
+
+      if (resetQuery.empty) {
+        throw new HttpsError(
+          "not-found",
+          "Invalid or already used token"
+        );
+      }
+
+      const resetDoc = resetQuery.docs[0];
+      const resetData = resetDoc.data();
+
+      // 有効期限チェック
+      const expiresAt = resetData.expires_at?.toDate();
+      if (!expiresAt || expiresAt < new Date()) {
+        throw new HttpsError("deadline-exceeded", "Token has expired");
+      }
+
+      const customerId = resetData.customer_id;
+
+      // パスワードを更新
+      await admin.auth().updateUser(customerId, {
+        password: newPassword,
+      });
+
+      // トークンを使用済みにする
+      await resetDoc.ref.update({
+        used: true,
+        used_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      logger.info("Password reset successful", {
+        customerId,
+        token,
+      });
+
+      return {success: true};
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      const errorObj = error as {message?: string};
+      logger.error("Password reset failed", {
+        error: errorObj.message,
+        token,
+      });
+      throw new HttpsError("internal", "Failed to reset password");
+    }
+  }
+);
+
 
 /**
  * 毎日 深夜 1:00 実行
@@ -694,239 +984,3 @@ export const generateThumbnail = onObjectFinalized(
 );
 */
 
-/**
- * パスワードリセットリクエストが作成されたらメールを送信
- */
-export const onPasswordResetRequest = onDocumentCreated(
-  {
-    document: "password_reset_requests/{requestId}",
-    region: "asia-northeast1",
-  },
-  async (event) => {
-    const snap = event.data;
-    if (!snap) {
-      logger.warn("No document data in password reset request");
-      return;
-    }
-
-    const resetData = snap.data();
-    const token = resetData.token;
-    const email = resetData.email;
-    const customerName = resetData.name_kana || "お客様";
-
-    logger.info("Password reset request received", {
-      email,
-      customerName,
-      requestId: snap.id,
-    });
-
-    // リセットURL（開発環境のドメインに変更してください）
-    const baseUrl = process.env.APP_URL || "http://localhost:5173";
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-    // Gmail SMTPでメール送信
-    const transporter = createTransporter();
-    const fromEmail = process.env.SMTP_USER || "noreply@example.com";
-
-    const mailOptions = {
-      from: fromEmail,
-      to: email,
-      subject: "パスワード再設定のご案内",
-      text: `${customerName}様\n\n` +
-        "パスワード再設定のリクエストを受け付けました。\n" +
-        "以下のURLからパスワードを再設定してください。\n\n" +
-        `${resetUrl}\n\n` +
-        "このリンクの有効期限は10分間です。\n" +
-        "※このメールに心当たりがない場合は、無視してください。",
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>パスワード再設定のご案内</h2>
-          <p>${customerName}様</p>
-          <p>パスワード再設定のリクエストを受け付けました。</p>
-          <p>以下のボタンからパスワードを再設定してください。</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetUrl}" 
-               style="background: linear-gradient(135deg,
-                      #667eea 0%, #764ba2 100%);
-                      color: white;
-                      padding: 12px 30px;
-                      text-decoration: none;
-                      border-radius: 6px;
-                      display: inline-block;
-                      font-weight: bold;">
-              パスワードを再設定する
-            </a>
-          </div>
-          <p style="font-size: 0.9em; color: #666;">
-            このリンクの有効期限は10分間です。
-          </p>
-          <p style="font-size: 0.9em; color: #666;">
-            ※このメールに心当たりがない場合は、無視してください。
-          </p>
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-          <p style="font-size: 0.8em; color: #999;">
-            このメールは自動送信されています。返信できません。
-          </p>
-        </div>
-      `,
-    };
-
-    try {
-      await transporter.sendMail(mailOptions);
-      logger.info("Password reset email sent successfully", {
-        email,
-        requestId: snap.id,
-      });
-    } catch (error: unknown) {
-      const errorObj = error as {message?: string; stack?: string};
-      logger.error("Failed to send password reset email", {
-        error: errorObj.message,
-        stack: errorObj.stack,
-        email,
-      });
-    }
-  }
-);
-
-/**
- * 管理者が顧客のパスワードを変更
- */
-export const adminUpdatePassword = onCall(
-  {
-    region: "asia-northeast1",
-  },
-  async (request) => {
-    const {uid, newPassword} = request.data;
-
-    if (!uid || !newPassword) {
-      throw new HttpsError(
-        "invalid-argument",
-        "uid and newPassword are required"
-      );
-    }
-
-    // 管理者権限チェック
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Authentication required");
-    }
-
-    const callerUid = request.auth.uid;
-    const callerDoc = await admin
-      .firestore()
-      .collection("customers")
-      .doc(callerUid)
-      .get();
-
-    if (!callerDoc.exists || callerDoc.data()?.role !== "admin") {
-      throw new HttpsError(
-        "permission-denied",
-        "Admin permission required"
-      );
-    }
-
-    try {
-      await admin.auth().updateUser(uid, {
-        password: newPassword,
-      });
-
-      logger.info("Admin updated user password", {
-        adminUid: callerUid,
-        targetUid: uid,
-      });
-
-      return {success: true};
-    } catch (error: unknown) {
-      const errorObj = error as {message?: string};
-      logger.error("Failed to update user password", {
-        error: errorObj.message,
-        targetUid: uid,
-      });
-      throw new HttpsError("internal", "Failed to update password");
-    }
-  }
-);
-
-/**
- * トークンを使用してパスワードをリセット
- */
-export const resetPasswordWithToken = onCall(
-  {
-    region: "asia-northeast1",
-  },
-  async (request) => {
-    const {token, newPassword} = request.data;
-
-    if (!token || !newPassword) {
-      throw new HttpsError(
-        "invalid-argument",
-        "token and newPassword are required"
-      );
-    }
-
-    if (newPassword.length < 6) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Password must be at least 6 characters"
-      );
-    }
-
-    try {
-      // トークンを検証
-      const resetQuery = await admin
-        .firestore()
-        .collection("password_reset_requests")
-        .where("token", "==", token)
-        .where("used", "==", false)
-        .orderBy("created_at", "desc")
-        .limit(1)
-        .get();
-
-      if (resetQuery.empty) {
-        throw new HttpsError(
-          "not-found",
-          "Invalid or already used token"
-        );
-      }
-
-      const resetDoc = resetQuery.docs[0];
-      const resetData = resetDoc.data();
-
-      // 有効期限チェック
-      const expiresAt = resetData.expires_at?.toDate();
-      if (!expiresAt || expiresAt < new Date()) {
-        throw new HttpsError("deadline-exceeded", "Token has expired");
-      }
-
-      const customerId = resetData.customer_id;
-
-      // パスワードを更新
-      await admin.auth().updateUser(customerId, {
-        password: newPassword,
-      });
-
-      // トークンを使用済みにする
-      await resetDoc.ref.update({
-        used: true,
-        used_at: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      logger.info("Password reset successful", {
-        customerId,
-        token,
-      });
-
-      return {success: true};
-    } catch (error: unknown) {
-      if (error instanceof HttpsError) {
-        throw error;
-      }
-
-      const errorObj = error as {message?: string};
-      logger.error("Password reset failed", {
-        error: errorObj.message,
-        token,
-      });
-      throw new HttpsError("internal", "Failed to reset password");
-    }
-  }
-);

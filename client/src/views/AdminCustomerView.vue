@@ -17,11 +17,10 @@ interface Customer {
     phone_number: string
     record_number?: string
     memo?: string
-    preferred_category?: 'barber' | 'beauty'
+    preferred_category?: 'barber' | 'beauty' | 'student' | 'chiro'
     // true => 既存顧客, false => 新規顧客
     is_existing_customer?: boolean
     deleted_at?: Timestamp | null
-    auth_uid?: string // Firebase AuthのUID
 }
 
 interface ReservationHistory {
@@ -157,17 +156,18 @@ const saveCustomer = async () => {
 }
 
 const deleteCustomer = async (id: string) => {
-    const ok = await dialog.confirm('この顧客を削除済みに移動しますか？', '削除確認', 'danger')
+    const ok = await dialog.confirm('この顧客を削除しますか？', '削除確認', 'danger')
     if (!ok) return
     try {
         await updateDoc(doc(db, 'customers', id), { deleted_at: Timestamp.now() })
-        dialog.alert('削除済みに移動しました')
+        dialog.alert('削除しました')
         fetchCustomers()
     } catch (e) { dialog.alert('削除失敗') }
 }
 
 const goBack = () => router.push('/admin')
 const goToTrash = () => router.push('/admin/customers/trash')
+const goToRecords = (customerId: string) => router.push(`/admin/customers/${customerId}/records`)
 
 // パスワード変更
 const openPasswordModal = (customerId: string) => {
@@ -224,20 +224,6 @@ const formatPhoneNumber = (value: string) => {
     return numbers
 }
 
-// 📋 カルテ画面へ遷移
-const goToRecords = (customerId: string) => {
-    console.log('📋 カルテ画面へ遷移:', customerId)
-    showModal.value = false
-    const path = `/admin/customers/${customerId}/records`
-    console.log('遷移先パス:', path)
-    router.push(path).catch(err => {
-        console.error('ルーティングエラー:', err)
-    })
-}
-
-// goToCustomerRecordsはgoToRecordsのエイリアス
-const goToCustomerRecords = goToRecords
-
 const formatDate = (ts: Timestamp) => {
     if (!ts) return ''
     const d = ts.toDate()
@@ -275,7 +261,7 @@ onMounted(() => { fetchCustomers() })
             </div>
             <h2>顧客管理</h2>
             <div class="header-right">
-                <button @click="goToTrash" class="trash-link-btn">� 削除済み顧客を見る</button>
+                <button @click="goToTrash" class="trash-link-btn">🗑️ 削除済み顧客</button>
             </div>
         </header>
 
@@ -306,7 +292,7 @@ onMounted(() => { fetchCustomers() })
                                 <td class="name-cell">{{ cust.name_kana }}</td>
                                 <td>{{ formatPhoneNumber(cust.phone_number || '') }}</td>
                                 <td>{{ cust.is_existing_customer ? '既存' : '新規' }}</td>
-                                <td>{{ cust.preferred_category === 'beauty' ? '美容' : '理容' }}</td>
+                                <td>{{ cust.preferred_category === 'beauty' ? '美容' : (cust.preferred_category === 'student' ? '学生' : (cust.preferred_category === 'chiro' ? 'カイロ' : '理容')) }}</td>
                                 <td class="memo-cell">{{ cust.memo }}</td>
                                 <td class="actions-cell">
                                     <button @click="openEditModal(cust)" class="edit-btn">詳細・履歴</button>
@@ -326,11 +312,7 @@ onMounted(() => { fetchCustomers() })
             <div class="modal-content">
                 <div class="modal-header-row">
                     <h3>{{ isEditing ? '顧客詳細・編集' : '新規顧客登録' }}</h3>
-                    <div class="header-actions">
-                        <button v-if="isEditing" @click="goToCustomerRecords(editForm.id)" class="records-btn"
-                            type="button">📋 カルテ</button>
-                        <button class="close-x-btn" @click="showModal = false">×</button>
-                    </div>
+                    <button class="close-x-btn" @click="showModal = false">×</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-section">
@@ -357,6 +339,10 @@ onMounted(() => { fetchCustomers() })
                                     理容</label>
                                 <label><input type="radio" value="beauty" v-model="editForm.preferred_category">
                                     美容</label>
+                                <label><input type="radio" value="student" v-model="editForm.preferred_category">
+                                    学生（中学まで）</label>
+                                <label><input type="radio" value="chiro" v-model="editForm.preferred_category">
+                                    カイロ</label>
                             </div>
                         </div>
                         <div class="form-group">
@@ -374,10 +360,10 @@ onMounted(() => { fetchCustomers() })
                         </div>
                         <div class="modal-actions">
                             <button @click="saveCustomer" class="save-btn">保存する</button>
-                            <button v-if="isEditing && editForm.id" @click="openPasswordModal(editForm.id)"
-                                class="password-btn" type="button">🔒 パスワード変更</button>
                             <button v-if="isEditing" @click="goToRecords(editForm.id)" class="records-btn">📋
                                 カルテを見る</button>
+                            <button v-if="isEditing" @click="openPasswordModal(editForm.id)" class="password-btn">🔒
+                                パスワード変更</button>
                         </div>
                     </div>
                     <div v-if="isEditing" class="history-section">
@@ -626,28 +612,6 @@ onMounted(() => { fetchCustomers() })
     margin: 0;
     font-size: 1.2rem;
     color: #333;
-}
-
-.header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.records-btn {
-    background: #4CAF50;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: bold;
-    transition: background 0.2s;
-}
-
-.records-btn:hover {
-    background: #45a049;
 }
 
 .close-x-btn {

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { db, auth } from '../lib/firebase'
+import { db, auth, messaging, VAPID_KEY } from '../lib/firebase'
 import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, Timestamp, onSnapshot, getDoc, type Unsubscribe } from 'firebase/firestore'
 import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
-import { messaging, VAPID_KEY } from '../lib/firebase' // 👈 VAPID_KEY
+// プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
+import { utils, writeFile } from 'xlsx-js-style'
 import { getToken, onMessage } from 'firebase/messaging'
-import * as XLSX from 'xlsx-js-style'
 
 const router = useRouter()
 const dialog = useDialogStore()
@@ -23,7 +23,7 @@ interface Reservation {
   customer_id?: string; // 👈 追加
   customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
 }
-interface Menu { id: string; title: string; duration_min: number; price: number; available_staff_ids?: string[] } // 🟢 追加
+interface Menu { id: string; title: string; duration_min: number; price: number }
 interface ShopConfig { holiday_weekdays: number[]; closed_dates: string[]; business_hours: { start: string; end: string }; tax_rate: number }
 
 const staffs = ref<Staff[]>([])
@@ -31,6 +31,11 @@ const staffs = ref<Staff[]>([])
 const listReservations = ref<Reservation[]>([])
 // reservations for the right-side timeline (only the selectedDate)
 const dayReservations = ref<Reservation[]>([])
+// 履歴用（確定・キャンセル済み予約）
+const historyReservations = ref<Reservation[]>([])
+const showHistory = ref(false)
+const historyDays = ref(30) // 履歴表示期間（日数）
+
 const menus = ref<Menu[]>([])
 const shopConfig = ref<ShopConfig>({ holiday_weekdays: [], closed_dates: [], business_hours: { start: '09:00', end: '19:00' }, tax_rate: 10 })
 const loading = ref(true)
@@ -44,6 +49,7 @@ const closeHour = ref(19)
 
 let unsubscribeList: Unsubscribe | null = null
 let unsubscribeDay: Unsubscribe | null = null
+let unsubscribeHistory: Unsubscribe | null = null
 
 const isDragging = ref(false)
 const dragStaffId = ref<string | null>(null)
@@ -131,17 +137,6 @@ const updateEndTime = () => {
 // 開始時間が変更されたときに終了時間も更新
 watch(() => newReservation.value.start_time, () => {
   updateEndTime()
-})
-
-// 🟢 担当スタッフが対応可能なメニューのみ表示
-const availableMenus = computed(() => {
-  if (!newReservation.value.staff_id) {
-    return menus.value // スタッフ未選択時は全メニュー表示
-  }
-  // 選択されたスタッフが対応可能なメニューのみ
-  return menus.value.filter(menu =>
-    menu.available_staff_ids?.includes(newReservation.value.staff_id)
-  )
 })
 
 // 共有の Audio インスタンス（フォールバック用）
@@ -297,7 +292,9 @@ const initData = async (fetchMaster = true) => {
     if (unsubscribeDay) unsubscribeDay()
     const qDay = query(collection(db, 'reservations'), where('start_at', '>=', Timestamp.fromDate(startOfDay)), where('start_at', '<', Timestamp.fromDate(endOfDay)), orderBy('start_at', 'asc'))
     unsubscribeDay = onSnapshot(qDay, (snapshot) => {
-      dayReservations.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
+      // キャンセル済みを除外
+      const allDayReservations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
+      dayReservations.value = allDayReservations.filter(res => res.status !== 'cancelled')
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
@@ -307,7 +304,6 @@ const initData = async (fetchMaster = true) => {
           // 1分以内に作成された予約（＝過去データ取得時ではなく、今の新規予約）なら
           if ((now - createdAt) < 60000 && !loading.value) {
 
-            // 🔴 修正: 通知がONのときかつWEB予約のときだけ実行する
             if (isNotifyEnabled.value && data.source === 'web') {
               // avoid duplicates when FCM also delivers the same reservation
               const rId = change.doc.id
@@ -316,13 +312,13 @@ const initData = async (fetchMaster = true) => {
                 return
               }
 
-              // 🎵 音を鳴らす（可能なら WebAudio バッファを使用）
+              // 音を鳴らす（可能なら WebAudio バッファを使用）
               playChime().then(() => console.log('チャイム再生成功')).catch(e => {
                 console.warn('チャイム再生ブロック', e)
                 playFallbackBeep()
               })
 
-              // ✨ ダイアログ表示
+              // ダイアログ表示
               const timeStr = `${formatTime(data.start_at)} - ${formatTime(data.end_at)}`;
               const staffName = getStaffName(data.staff_id);
               const menuName = data.menu_items?.[0]?.title || 'メニュー不明';
@@ -346,16 +342,63 @@ const initData = async (fetchMaster = true) => {
     windowEnd.setDate(windowEnd.getDate() + listWindowDays.value)
     const qList = query(collection(db, 'reservations'), where('start_at', '>=', Timestamp.fromDate(startOfDay)), where('start_at', '<', Timestamp.fromDate(windowEnd)), orderBy('start_at', 'asc'))
     unsubscribeList = onSnapshot(qList, (snapshot) => {
-      listReservations.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
+      // キャンセル済みを除外
+      const allListReservations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
+      listReservations.value = allListReservations.filter(res => res.status !== 'cancelled')
     })
+
+    // 3) 履歴データの取得（確定・キャンセル済み）
+    fetchHistoryReservations()
 
     // Note: Foreground FCM handler is registered once in onMounted lifecycle
   } catch (e) { console.error(e); loading.value = false }
 }
 
+// 履歴（確定・キャンセル済み）を取得する関数
+const fetchHistoryReservations = () => {
+  if (unsubscribeHistory) unsubscribeHistory()
+
+  // 指定日数前から現在までの予約を取得
+  const endDate = new Date()
+  const startDate = new Date(endDate)
+  startDate.setDate(startDate.getDate() - historyDays.value)
+  startDate.setHours(0, 0, 0, 0)
+
+  // 過去N日間の予約を取得
+  const qHistory = query(
+    collection(db, 'reservations'),
+    where('start_at', '>=', Timestamp.fromDate(startDate)),
+    orderBy('start_at', 'desc')
+  )
+
+  unsubscribeHistory = onSnapshot(qHistory, (snapshot) => {
+    const allReservations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Reservation[]
+
+    // デバッグ：全予約のステータスを確認
+    console.log('[履歴デバッグ] 全予約:', allReservations.map(r => ({
+      id: r.id.slice(0, 8),
+      status: r.status,
+      date: r.start_at.toDate().toLocaleDateString(),
+      customer: r.customer_name
+    })))
+
+    // 確定またはキャンセル済みのみを表示
+    historyReservations.value = allReservations.filter(res =>
+      res.status === 'confirmed' || res.status === 'cancelled'
+    )
+    console.log('[履歴] 取得件数:', allReservations.length, 'フィルタ後:', historyReservations.value.length)
+  })
+}
+
 // 🔔 1. 画面ロード時に現在の通知設定を確認する
 const checkNotificationStatus = async () => {
   try {
+    // messagingがサポートされていない環境（LINEブラウザなど）では無効化
+    if (!messaging) {
+      isNotifyEnabled.value = false
+      return
+    }
+
     // まずブラウザの許可状態を確認
     if (Notification.permission !== 'granted') {
       isNotifyEnabled.value = false
@@ -417,9 +460,16 @@ const toggleNotification = async () => {
   }
 }
 
+
 // 🔔 3. 通知ON処理 (既存の requestNotificationPermission を少し修正)
 const requestNotificationPermission = async () => {
   try {
+    // messagingがサポートされていない環境では通知を有効化できない
+    if (!messaging) {
+      await dialog.alert('この環境ではプッシュ通知がサポートされていません')
+      return
+    }
+
     const permission = await Notification.requestPermission()
     console.log('requestNotificationPermission - Notification.permission:', permission)
     if (permission === 'granted') {
@@ -455,7 +505,7 @@ const requestNotificationPermission = async () => {
           // ユーザー操作の文脈なので WebAudio の resume とプリロード済みバッファの短再生を試みる
           ensureAudioContext()
           if (audioCtx) {
-            try { await audioCtx.resume() } catch (_) { /* ignore */ }
+            try { await audioCtx.resume() } catch (_) { } // ignore
             if (!chimeBuffer) await preloadChime()
             if (chimeBuffer) {
               try {
@@ -467,7 +517,7 @@ const requestNotificationPermission = async () => {
                 src.connect(g)
                 g.connect(audioCtx.destination)
                 src.start()
-                setTimeout(() => { try { src.stop() } catch (_) { } }, 120)
+                setTimeout(() => { try { src.stop() } catch (_) { } }, 120) // ignore errors
                 console.log('通知用サウンドをWebAudioでプリロード/プライムしました')
               } catch (e) {
                 console.warn('WebAudio test playback failed', e)
@@ -481,7 +531,7 @@ const requestNotificationPermission = async () => {
                 console.log('通知用サウンド（Audio element）でプリロードに成功')
               } catch (e) {
                 console.warn('通知サウンドのプリロードがブロックされました', e)
-                try { playFallbackBeep() } catch (_) { /* ignore */ }
+                try { playFallbackBeep() } catch (_) { } // ignore
               }
             }
           }
@@ -499,9 +549,15 @@ const requestNotificationPermission = async () => {
     dialog.alert(`設定に失敗しました: ${errorMsg}`)
   }
 }
+
 // 🔔 4. 通知OFF処理 (新規)
 const turnOffNotification = async () => {
   try {
+    // messagingがサポートされていない環境では何もしない
+    if (!messaging) {
+      return
+    }
+
     const token = await getToken(messaging, { vapidKey: VAPID_KEY })
     if (token) {
       // DBから削除
@@ -524,39 +580,50 @@ const turnOffNotification = async () => {
   }
 }
 
+
 // 電話番号フォーマット（ハイフン自動補完）
 const formatPhoneNumber = (value: string) => {
   // 数字のみ抽出
   const numbers = value.replace(/[^0-9]/g, '')
 
-  // 桁数に応じてフォーマット
-  if (numbers.length <= 3) {
-    return numbers
-  } else if (numbers.length <= 6) {
+  // 桁数に応じてフォーマット（早期リターン）
+  if (numbers.length <= 3) return numbers
+
+  if (numbers.length <= 6) {
     // 3-3 or 3-4
     return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
-  } else if (numbers.length === 7) {
+  }
+
+  if (numbers.length === 7) {
     // 7桁: 000-0000 (固定電話)
     return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
-  } else if (numbers.length === 8) {
+  }
+
+  if (numbers.length === 8) {
     // 8桁: 0000-0000 (4-4形式)
     return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
-  } else if (numbers.length === 9) {
+  }
+
+  if (numbers.length === 9) {
     // 9桁: 000-000-000 または 0000-0-0000 → 一般的なのは 000-000-000
     return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
-  } else if (numbers.length === 10) {
+  }
+
+  if (numbers.length === 10) {
     // 10桁: 000-000-0000 (携帯/固定)
     // 先頭が090,080,070などなら携帯形式
     if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
       return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
-    } else {
-      // 固定電話の場合 (0X-XXXX-XXXX または 0XX-XXX-XXXX)
-      return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
     }
-  } else if (numbers.length >= 11) {
+    // 固定電話の場合 (0X-XXXX-XXXX または 0XX-XXX-XXXX)
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  }
+
+  if (numbers.length >= 11) {
     // 11桁: 000-0000-0000 (携帯)
     return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
   }
+
   return numbers
 }
 
@@ -722,7 +789,6 @@ const saveCustomer = async () => {
     newReservation.value.customer_id = docRef.id
     newReservation.value.customer_name = newCustomer.value.name_kana
     newReservation.value.customer_phone = formatPhoneNumber(phoneNumberToSave)
-
     dialog.alert('顧客を登録しました')
     showCustomerModal.value = false
   } catch (e) {
@@ -739,6 +805,7 @@ const submitReservation = async () => {
     customer_name: '',
     customer_phone: ''
   }
+  showSuggestions.value = false
 
   // バリデーションチェック
   let hasError = false
@@ -780,11 +847,10 @@ const submitReservation = async () => {
   const totalPrice = menuItems.reduce((sum, item) => sum + item.price, 0)
   const totalDuration = menuItems.reduce((sum, item) => sum + item.duration, 0)
 
-  const payload = {
+  const payload: any = {
     staff_id: newReservation.value.staff_id,
     start_at: Timestamp.fromDate(startDate),
     end_at: Timestamp.fromDate(endDate),
-    customer_id: newReservation.value.customer_id || undefined,
     customer_name: newReservation.value.customer_name,
     customer_phone: phoneNumberToSave,
     menu_items: menuItems,
@@ -792,35 +858,17 @@ const submitReservation = async () => {
     total_duration_min: totalDuration,
     source: 'phone', note: newReservation.value.note || '', status: 'confirmed'
   }
+
+  // customer_idがあれば追加
+  if (newReservation.value.customer_id) {
+    payload.customer_id = newReservation.value.customer_id
+  }
   try {
     if (isEditing.value && editingId.value) {
       await updateDoc(doc(db, 'reservations', editingId.value), payload)
       await dialog.alert('予約を更新しました')
     } else {
-      const docRef = await addDoc(collection(db, 'reservations'), { ...payload, created_at: Timestamp.now() })
-
-      // 顧客IDがあればメッセージ通知を送信
-      if (newReservation.value.customer_id) {
-        try {
-          const staffName = staffs.value.find(s => s.id === newReservation.value.staff_id)?.name || '担当者'
-          const dateStr = startDate.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-          const menuNames = menuItems.map(m => m.title).join(', ')
-
-          await addDoc(collection(db, 'messages'), {
-            customer_id: newReservation.value.customer_id,
-            reservation_id: docRef.id,
-            title: '予約が確定しました',
-            body: `📞 お電話にてご予約いただいた内容が確定いたしました。\n\n日時: ${dateStr}\nメニュー: ${menuNames}\n担当: ${staffName}\n\nご来店を心よりお待ちしております。`,
-            created_at: Timestamp.now(),
-            is_read: false
-          })
-          console.log('✅ 顧客に予約確定通知を送信しました (customer_id:', newReservation.value.customer_id, ', reservation_id:', docRef.id, ')')
-        } catch (msgError) {
-          console.error('メッセージ送信エラー:', msgError)
-        }
-      } else {
-        console.log('ℹ️ 顧客IDがないため、メッセージ通知はスキップします')
-      }
+      await addDoc(collection(db, 'reservations'), { ...payload, created_at: Timestamp.now() })
       await dialog.alert('予約を追加しました')
 
       // 🟢 予約登録後、顧客の新規登録確認処理
@@ -895,34 +943,29 @@ const submitReservation = async () => {
 }
 
 const deleteReservation = async (id: string) => {
-  const ok = await dialog.confirm('本当に削除しますか？\n（復元できません）', '削除確認', 'danger')
+  const ok = await dialog.confirm('この予約をキャンセルしますか？\n（履歴に残ります）', 'キャンセル確認', 'danger')
   if (!ok) return
 
   try {
-    // 1. 予約データの削除 (物理削除)
-    await deleteDoc(doc(db, 'reservations', id))
+    // 1. 予約データを論理削除（status='cancelled'に変更）
+    await updateDoc(doc(db, 'reservations', id), {
+      status: 'cancelled',
+      cancelled_at: Timestamp.now()
+    })
 
-    // 🟢 2. 関連するメッセージを「キャンセル扱い」に更新
-    try {
-      const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
-      const msgSnap = await getDocs(msgQ)
+    // 2. 関連するメッセージを「キャンセル扱い」に更新
+    const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', id))
+    const msgSnap = await getDocs(msgQ)
 
-      const updatePromises = msgSnap.docs.map(d =>
-        updateDoc(d.ref, {
-          is_cancelled: true,
-          title: '【キャンセル済】' + d.data().title
-        }).catch((err: any) => {
-          console.warn('メッセージ更新エラー:', err.code || err.message)
-        })
-      )
-      await Promise.all(updatePromises)
-      console.log('✅ 関連するメッセージをキャンセル済みに更新しました')
-    } catch (msgError: any) {
-      console.warn('メッセージ更新失敗（非クリティカル）:', msgError.code || msgError.message)
-    }
+    msgSnap.forEach(async (d) => {
+      await updateDoc(d.ref, {
+        is_cancelled: true,
+        title: '【キャンセル済】' + d.data().title
+      })
+    })
 
     showDetailModal.value = false
-    // 完了ダイアログは出さずにスッと閉じる（既存の挙動）
+    await dialog.alert('予約をキャンセルしました\n履歴からご確認いただけます')
 
   } catch (e) {
     console.error(e)
@@ -930,7 +973,58 @@ const deleteReservation = async (id: string) => {
   }
 }
 
-// 🟢 予約確定 (メッセージ作成機能付き)
+const restoreReservation = async (res: Reservation) => {
+  const ok = await dialog.confirm('この予約を復元しますか？\n（仮予約として復元されます）', '復元確認', 'warning')
+  if (!ok) return
+
+  try {
+    const startTime = res.start_at.toDate()
+    const endTime = res.end_at.toDate()
+
+    const conflictQuery = query(
+      collection(db, 'reservations'),
+      where('staff_id', '==', res.staff_id),
+      where('start_at', '>=', Timestamp.fromDate(new Date(startTime.getTime() - 24 * 60 * 60 * 1000))),
+      where('start_at', '<=', Timestamp.fromDate(new Date(endTime.getTime() + 24 * 60 * 60 * 1000)))
+    )
+
+    const conflictSnap = await getDocs(conflictQuery)
+    const conflicts = conflictSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as Reservation))
+      .filter(r => {
+        if (r.id === res.id || r.status === 'cancelled') return false
+        const rStart = r.start_at.toDate().getTime()
+        const rEnd = r.end_at.toDate().getTime()
+        const targetStart = startTime.getTime()
+        const targetEnd = endTime.getTime()
+        return (rStart < targetEnd && rEnd > targetStart)
+      })
+
+    if (conflicts.length > 0) {
+      const conflict = conflicts[0]!
+      const conflictTime = formatTime(conflict.start_at)
+      await dialog.alert(
+        `指定の時間帯に既に予約が入っています\n\n予約時間: ${conflictTime}\n顧客: ${conflict.customer_name || '不明'}\n\n先に既存の予約を調整してから復元してください`,
+        '復元できません'
+      )
+      return
+    }
+
+    await updateDoc(doc(db, 'reservations', res.id), {
+      status: 'pending',
+      cancelled_at: null
+    })
+
+    showDetailModal.value = false
+    await dialog.alert('予約を復元しました\n仮予約として登録されました')
+
+  } catch (e) {
+    console.error(e)
+    dialog.alert('復元に失敗しました')
+  }
+}
+
+// �🟢 予約確定 (メッセージ作成機能付き)
 const approveReservation = async (res: Reservation) => {
   // 🟢 予約内容の確認ダイアログ
   const startDate = res.start_at.toDate()
@@ -977,7 +1071,7 @@ const approveReservation = async (res: Reservation) => {
   }
 }
 
-// 🔍 予約詳細を開く（履歴取得も行う）
+// 予約詳細を開く（履歴取得も行う）
 const openReservationDetail = async (res: Reservation) => {
   selectedReservation.value = res
   showDetailModal.value = true
@@ -1001,18 +1095,16 @@ const openReservationDetail = async (res: Reservation) => {
 // 顧客詳細画面へ遷移
 const goToCustomerDetail = () => {
   if (selectedReservation.value?.customer_id) {
-    // 🟢 open_id パラメータを付与して遷移
+    // open_id パラメータを付与して遷移
     router.push(`/admin/customers?open_id=${selectedReservation.value.customer_id}`)
   } else {
     router.push('/admin/customers')
   }
 }
 
-// 📋 カルテ画面へ遷移
-const goToCustomerRecords = () => {
-  if (selectedReservation.value?.customer_id) {
-    router.push(`/admin/customers/${selectedReservation.value.customer_id}/records`)
-  }
+// カルテ画面へ遷移
+const goToRecords = (customerId: string) => {
+  router.push(`/admin/customers/${customerId}/records`)
 }
 
 const openEditModal = async (res: Reservation) => {
@@ -1201,6 +1293,12 @@ const loadMoreDays = (days = 30) => {
   initData(false)
 }
 
+// 履歴表示期間を延長
+const loadMoreHistoryDays = (days = 30) => {
+  historyDays.value += days
+  fetchHistoryReservations()
+}
+
 onMounted(async () => {
   initData()
   // try to preload the chime buffer for lower-latency playback
@@ -1238,7 +1336,10 @@ onMounted(async () => {
     }
 
     try {
-      unregisterFcmOnMessage = onMessage(messaging, fcmHandler) as unknown as () => void
+      // messagingがサポートされている環境のみでonMessageを登録
+      if (messaging) {
+        unregisterFcmOnMessage = onMessage(messaging, fcmHandler) as unknown as () => void
+      }
     } catch (e) {
       console.warn('onMessage registration failed', e)
     }
@@ -1248,6 +1349,7 @@ onMounted(async () => {
 onUnmounted(() => {
   try { if (unsubscribeDay) unsubscribeDay() } catch (_) { }
   try { if (unsubscribeList) unsubscribeList() } catch (_) { }
+  try { if (unsubscribeHistory) unsubscribeHistory() } catch (_) { }
   try { if (unregisterFcmOnMessage) unregisterFcmOnMessage() } catch (_) { }
 })
 
@@ -1436,11 +1538,11 @@ const exportReservationsToExcel = async () => {
     })
 
     // ワークブックとワークシートを作成
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const worksheet = utils.aoa_to_sheet(worksheetData)
 
     // セルスタイルを適用
     cellStyles.forEach(({ row, col, style }) => {
-      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+      const cellAddress = utils.encode_cell({ r: row, c: col })
       if (!worksheet[cellAddress]) {
         worksheet[cellAddress] = { t: 's', v: '' }
       }
@@ -1460,14 +1562,14 @@ const exportReservationsToExcel = async () => {
     })
     worksheet['!cols'] = colWidths
 
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, '予約一覧')
+    const workbook = utils.book_new()
+    utils.book_append_sheet(workbook, worksheet, '予約一覧')
 
     // ファイル名を生成（表示期間の開始日）
     const fileName = `予約一覧_${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}.xlsx`
 
     // ファイルをダウンロード
-    XLSX.writeFile(workbook, fileName)
+    writeFile(workbook, fileName)
 
     dialog.alert(`${reservations.length}件の予約をExcelに出力しました`, '出力完了')
   } catch (error) {
@@ -1609,6 +1711,61 @@ const exportReservationsToExcel = async () => {
             </div>
           </div>
         </div>
+
+        <!-- 予約履歴セクション -->
+        <div class="history-section">
+          <div class="history-header">
+            <button @click="showHistory = !showHistory" class="history-toggle-btn">
+              <span class="toggle-icon">{{ showHistory ? '▼' : '▶' }}</span>
+              <h3 style="margin: 0;">📋 予約履歴（確定・キャンセル済み）</h3>
+              <span class="history-count">{{ historyReservations.length }}件</span>
+            </button>
+          </div>
+
+          <transition name="slide-down">
+            <div v-if="showHistory" class="history-content">
+              <div class="history-info">
+                <p>過去{{ historyDays }}日間の確定・キャンセル済み予約を表示しています</p>
+                <button class="load-more-btn" @click="loadMoreHistoryDays(30)">さらに30日を読み込む</button>
+              </div>
+
+              <div v-if="historyReservations.length === 0" class="no-data">
+                履歴はありません
+              </div>
+
+              <div v-else class="history-list">
+                <div v-for="res in historyReservations" :key="res.id" class="history-card"
+                  :class="{ 'cancelled': res.status === 'cancelled' }" @click="openReservationDetail(res)">
+                  <div class="history-card-header">
+                    <span class="history-date">{{ formatDateJP(res.start_at.toDate()) }}</span>
+                    <span class="history-time">{{ formatTime(res.start_at) }} - {{ formatTime(res.end_at) }}</span>
+                    <span class="history-status" :class="res.status">
+                      {{ res.status === 'confirmed' ? '✓ 確定' : '✕ キャンセル' }}
+                    </span>
+                  </div>
+                  <div class="history-card-body">
+                    <div class="history-info-row">
+                      <span class="label">担当:</span>
+                      <span class="value">{{ getStaffName(res.staff_id) }}</span>
+                    </div>
+                    <div class="history-info-row">
+                      <span class="label">顧客:</span>
+                      <span class="value">{{ res.customer_name || '不明' }}</span>
+                    </div>
+                    <div class="history-info-row">
+                      <span class="label">メニュー:</span>
+                      <span class="value">{{res.menu_items?.map(m => m.title).join(', ') || '-'}}</span>
+                    </div>
+                    <div v-if="res.total_price" class="history-info-row">
+                      <span class="label">金額:</span>
+                      <span class="value price">¥{{ res.total_price?.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </transition>
+        </div>
       </div>
     </div>
 
@@ -1638,7 +1795,7 @@ const exportReservationsToExcel = async () => {
             @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
             :class="{ 'input-error': validationErrors.menus }">
             <option value="">メニューを追加...</option>
-            <option v-for="m in availableMenus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
+            <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
           </select>
           <div v-if="selectedMenus.length > 0" class="selected-menus">
             <span v-for="menu in selectedMenus" :key="menu.id" class="menu-chip">
@@ -1652,53 +1809,50 @@ const exportReservationsToExcel = async () => {
           <span v-if="validationErrors.menus" class="error-message">{{ validationErrors.menus }}</span>
         </div>
         <div class="form-group">
-          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
-          <div class="input-with-suggestions">
-            <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
-              :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
-            <div v-if="showSuggestions && customerSuggestions.length > 0" class="customer-suggestions">
-              <div class="suggestion-header">👥 登録済みの顧客</div>
-              <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
-                @click="selectCustomer(customer)">
-                <span class="customer-name">👤 {{ customer.name }}</span>
-                <span class="customer-phone">📞 {{ formatPhoneNumber(customer.phone) }}</span>
-              </div>
-            </div>
-          </div>
-          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-            }}</span>
-        </div>
-        <div class="form-group">
           <label>カルテ番号</label>
-          <div class="input-with-suggestions">
+          <div class="suggest-wrapper">
             <input type="text" v-model="newReservation.record_number" @input="handleRecordNumberInput"
               placeholder="例: K-000123">
-            <div v-if="showRecordSuggestions && customerSuggestions.length > 0" class="customer-suggestions">
-              <div class="suggestion-header">🔍 カルテ番号から検索</div>
+            <div v-if="showRecordSuggestions" class="suggestions-dropdown">
               <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
                 @click="selectCustomer(customer)">
-                <span class="customer-name">📋 {{ customer.record_number }} - {{ customer.name }}</span>
-                <span class="customer-phone">📞 {{ formatPhoneNumber(customer.phone) }}</span>
+                <span class="customer-name">{{ customer.record_number }} - {{ customer.name }}</span>
+                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="form-group">
           <label>顧客名 <span style="color: #e74c3c;">*</span></label>
-          <div class="input-with-suggestions">
+          <div class="suggest-wrapper">
             <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
               :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
-            <div v-if="showNameSuggestions && customerSuggestions.length > 0" class="customer-suggestions">
-              <div class="suggestion-header">👥 登録済みの顧客</div>
+            <div v-if="showNameSuggestions" class="suggestions-dropdown">
               <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
                 @click="selectCustomer(customer)">
-                <span class="customer-name">👤 {{ customer.name }}</span>
-                <span class="customer-phone">📞 {{ formatPhoneNumber(customer.phone) }}</span>
+                <span class="customer-name">{{ customer.name }}</span>
+                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
               </div>
             </div>
           </div>
           <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
           <button class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
+        </div>
+        <div class="form-group">
+          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
+          <div class="suggest-wrapper">
+            <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
+              :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
+            <div v-if="showSuggestions" class="suggestions-dropdown">
+              <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
+                @click="selectCustomer(customer)">
+                <span class="customer-name">{{ customer.name }}</span>
+                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
+              </div>
+            </div>
+          </div>
+          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
+          }}</span>
         </div>
         <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
             placeholder="特記事項..."></textarea>
@@ -1728,9 +1882,8 @@ const exportReservationsToExcel = async () => {
           <div class="detail-row"><span class="label">顧客名:</span> {{ selectedReservation.customer_name || '名称未設定' }}
             <button v-if="selectedReservation.customer_id" class="link-text-btn" @click="goToCustomerDetail">➡
               顧客詳細へ</button>
-            <button v-if="selectedReservation.customer_id" class="link-text-btn link-records"
-              @click="goToCustomerRecords">➡
-              カルテを見る</button>
+            <button v-if="selectedReservation.customer_id" class="link-text-btn"
+              @click="goToRecords(selectedReservation.customer_id)">➡ カルテを見る</button>
           </div>
           <div class="detail-row"><span class="label">電話:</span> {{ selectedReservation.customer_phone ?
             formatPhoneNumber(selectedReservation.customer_phone) : 'なし' }}</div>
@@ -1760,7 +1913,10 @@ const exportReservationsToExcel = async () => {
         </div>
 
         <div class="modal-actions split">
-          <button class="delete-confirm-btn" @click="deleteReservation(selectedReservation.id)">🗑️ 削除</button>
+          <button v-if="selectedReservation.status === 'cancelled'" class="restore-btn"
+            @click="restoreReservation(selectedReservation)">🔄 復元</button>
+          <button v-else class="delete-confirm-btn" @click="deleteReservation(selectedReservation.id)">🗑️
+            キャンセル</button>
           <button class="edit-btn" @click="openEditModal(selectedReservation)">✏️ 編集</button>
         </div>
       </div>
@@ -1788,6 +1944,8 @@ const exportReservationsToExcel = async () => {
           <div class="radio-group">
             <label><input type="radio" value="barber" v-model="newCustomer.preferred_category"> 理容</label>
             <label><input type="radio" value="beauty" v-model="newCustomer.preferred_category"> 美容</label>
+            <label><input type="radio" value="student" v-model="newCustomer.preferred_category"> 学生（中学まで）</label>
+            <label><input type="radio" value="chiro" v-model="newCustomer.preferred_category"> カイロ</label>
           </div>
         </div>
         <div class="form-group">
@@ -2831,6 +2989,21 @@ textarea {
   background: #e67e22;
 }
 
+.restore-btn {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 0.5rem 1.2rem;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.restore-btn:hover {
+  background: #229954;
+}
+
 .tag-phone {
   color: #e67e22;
   font-weight: bold;
@@ -2870,69 +3043,186 @@ textarea {
   display: block;
 }
 
-/* 顧客サジェスト機能 */
-.input-with-suggestions {
-  position: relative;
-  width: 100%;
-}
-
-.customer-suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  margin-top: 4px;
-  max-height: 250px;
-  overflow-y: auto;
-  z-index: 1000;
-}
-
-.suggestion-header {
-  padding: 10px 12px;
+/* 予約履歴セクション */
+.history-section {
+  margin-top: 2rem;
   background: #f8f9fa;
-  border-bottom: 1px solid #e9ecef;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: #495057;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.suggestion-item {
-  padding: 12px;
+.history-header {
+  background: white;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.history-toggle-btn {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   cursor: pointer;
-  border-bottom: 1px solid #f1f3f5;
-  transition: background-color 0.2s;
+  transition: background 0.2s;
+}
+
+.history-toggle-btn:hover {
+  background: #f8f9fa;
+}
+
+.toggle-icon {
+  font-size: 1rem;
+  color: #666;
+  transition: transform 0.3s;
+}
+
+.history-count {
+  margin-left: auto;
+  background: #3498db;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.history-content {
+  padding: 1.5rem;
+}
+
+.history-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 4px;
 }
 
-.suggestion-item:last-child {
-  border-bottom: none;
+.history-info p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
 }
 
-.suggestion-item:hover {
-  background: #f1f8ff;
+.history-list {
+  display: grid;
+  gap: 0.75rem;
 }
 
-.customer-name {
-  font-weight: 600;
-  color: #2c3e50;
-  font-size: 0.95rem;
+.history-card {
+  background: white;
+  border-radius: 6px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 4px solid #27ae60;
 }
 
-.customer-phone {
-  color: #7f8c8d;
+.history-card.cancelled {
+  border-left-color: #e74c3c;
+  opacity: 0.8;
+}
+
+.history-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.history-card-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.history-date {
+  font-weight: bold;
+  color: #333;
+}
+
+.history-time {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.history-status {
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
   font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.history-status.confirmed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.history-status.cancelled {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.history-card-body {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.history-info-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.history-info-row .label {
+  color: #666;
+  min-width: 80px;
+}
+
+.history-info-row .value {
+  color: #333;
+  font-weight: 500;
+}
+
+.history-info-row .value.price {
+  color: #27ae60;
+  font-weight: bold;
+}
+
+/* スライドダウンアニメーション */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+  max-height: 2000px;
+  overflow: hidden;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  max-height: 0;
+  opacity: 0;
 }
 
 @media (max-width: 768px) {
   .modal-body {
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .history-card-header {
+    flex-wrap: wrap;
+  }
+
+  .history-info {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
   }
 }
 </style>

@@ -16,9 +16,9 @@ const handleLogin = async () => {
   errorMsg.value = ''
   try {
     await signInWithEmailAndPassword(auth, email.value, password.value)
-    // ログイン成功後、IDトークンのカスタムクレームに is_admin があるか確認して遷移
+    // ログイン成功後、IDトークンのカスタムクレームに admin があるか確認して遷移
     const idTokenResult = await getIdTokenResult(auth.currentUser!)
-    if (idTokenResult.claims && idTokenResult.claims.is_admin) {
+    if (idTokenResult.claims && idTokenResult.claims.admin) {
       router.push('/admin')
     } else {
       // 管理者権限がない場合はログアウト

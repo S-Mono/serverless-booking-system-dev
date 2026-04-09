@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 // 👇 writeBatch, doc を追加インポート
-import { collection, query, where, orderBy, getDocs, Timestamp, writeBatch, doc, updateDoc } from 'firebase/firestore'
+import { collection, query, where, orderBy, getDocs, onSnapshot, Timestamp, writeBatch, doc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog' // ダイアログ用
 
@@ -25,6 +25,7 @@ const loading = ref(true)
 const currentUser = ref<any>(null)
 const showArchived = ref(false) // 履歴表示フラグ
 const isDeletingMessages = ref(false) // 削除中フラグ
+let messagesUnsubscribe: (() => void) | null = null // リアルタイム監視解除用
 
 // 表示するメッセージ（アクティブまたは全て）
 const displayMessages = computed(() => {
@@ -41,34 +42,46 @@ const activeCount = computed(() => messages.value.filter(msg => !msg.deleted_at)
 // アーカイブされたメッセージ数
 const archivedCount = computed(() => messages.value.filter(msg => msg.deleted_at).length)
 
-const fetchMessages = async (userId: string) => {
+const fetchMessages = (userId: string) => {
     loading.value = true
+
+    // 既存のリスナーがあれば解除
+    if (messagesUnsubscribe) {
+        messagesUnsubscribe()
+    }
+
     try {
         const q = query(
             collection(db, 'messages'),
             where('customer_id', '==', userId),
             orderBy('created_at', 'desc')
         )
-        const snap = await getDocs(q)
-        messages.value = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Message[]
 
-        // 🟢 追加: 未読のものがあれば、一括で既読(is_read = true)にする
-        const unreadDocs = snap.docs.filter(doc => doc.data().is_read === false)
+        // リアルタイム監視を開始
+        messagesUnsubscribe = onSnapshot(q, async (snap) => {
+            messages.value = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Message[]
+            loading.value = false
 
-        if (unreadDocs.length > 0) {
-            // バッチ処理でまとめて更新（通信回数を節約）
-            const batch = writeBatch(db)
-            unreadDocs.forEach(doc => {
-                batch.update(doc.ref, { is_read: true })
-            })
-            await batch.commit()
-            // ※App.vue側でリアルタイム監視(onSnapshot)しているので、
-            // ここで書き込むと自動的にヘッダーのバッジも消えます！
-        }
+            // 🟢 未読のものがあれば、一括で既読(is_read = true)にする
+            const unreadDocs = snap.docs.filter(doc => doc.data().is_read === false)
+
+            if (unreadDocs.length > 0) {
+                // バッチ処理でまとめて更新（通信回数を節約）
+                const batch = writeBatch(db)
+                unreadDocs.forEach(doc => {
+                    batch.update(doc.ref, { is_read: true })
+                })
+                await batch.commit()
+                // ※App.vue側でリアルタイム監視(onSnapshot)しているので、
+                // ここで書き込むと自動的にヘッダーのバッジも消えます！
+            }
+        }, (error) => {
+            console.error('メッセージ取得エラー:', error)
+            loading.value = false
+        })
 
     } catch (e) {
-        console.error('メッセージ取得エラー:', e)
-    } finally {
+        console.error('メッセージ監視開始エラー:', e)
         loading.value = false
     }
 }
@@ -127,8 +140,7 @@ const deleteOldMessages = async () => {
             '完了'
         )
 
-        // 画面をリロード
-        if (currentUser.value) await fetchMessages(currentUser.value.uid)
+        // リアルタイム監視により自動で画面更新されます
 
     } catch (e) {
         console.error(e)
@@ -170,8 +182,7 @@ const permanentlyDeleteArchived = async () => {
 
         await dialog.alert(`${archived.length}件の履歴を完全に削除しました`)
 
-        // 画面をリロード
-        if (currentUser.value) await fetchMessages(currentUser.value.uid)
+        // リアルタイム監視により自動で画面更新されます
 
     } catch (e: any) {
         console.error('履歴削除エラー:', e)
@@ -207,6 +218,10 @@ onUnmounted(() => {
     if (unsubscribeAuth) {
         unsubscribeAuth()
         console.log('[MessagesView] Auth listener unsubscribed')
+    }
+    if (messagesUnsubscribe) {
+        messagesUnsubscribe()
+        console.log('[MessagesView] Messages listener unsubscribed')
     }
 })
 </script>
@@ -254,6 +269,7 @@ onUnmounted(() => {
                     <span class="msg-date">{{ formatDate(msg.created_at) }}</span>
                     <span class="msg-title">
                         <span v-if="msg.deleted_at" class="archived-badge">履歴</span>
+                        <span v-else-if="msg.is_cancelled" class="cancel-badge">キャンセル</span>
                         <span v-else-if="msg.is_read === false" class="new-badge">NEW</span>
                         {{ msg.title }}
                     </span>
@@ -527,26 +543,22 @@ onUnmounted(() => {
 
 /* キャンセルされたメッセージのスタイル */
 .message-card.cancelled {
-    background-color: #f3f3f3;
-    /* 背景をグレーに */
-    border-left: 5px solid #bdc3c7;
+    background-color: #f8f9fa;
+    /* 背景を薄いグレーに */
+    border-left: 5px solid #95a5a6;
     /* 左線をグレーに */
-    opacity: 0.7;
-    /* 全体を薄くする */
+    opacity: 0.85;
+    /* 全体を少し薄くする */
 }
 
-.message-card.cancelled .msg-title,
+.message-card.cancelled .msg-title {
+    color: #6c757d;
+    /* タイトルは薄い色に（取り消し線なし） */
+}
+
 .message-card.cancelled .msg-body {
     color: #95a5a6;
-    /* 文字色も薄く */
-    text-decoration: line-through;
-    /* 取り消し線（お好みで） */
-}
-
-/* 打ち消し線を入れるなら body の white-space と競合しないよう注意 */
-.message-card.cancelled .msg-body {
-    text-decoration: none;
-    /* 本文は読みづらくなるので線なしが良いかも */
+    /* 本文も薄い色に */
 }
 
 .cancel-badge {

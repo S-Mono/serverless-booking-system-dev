@@ -68,25 +68,40 @@ let unsubscribeAuth: Unsubscribe | null = null
 let unsubscribeMessages: (() => void) | null = null
 
 onMounted(async () => {
-  await lineAuthStore.init()
+  console.log('=== App.vue mounted ===')
+  console.log('Line auth initializing...')
+  try {
+    await lineAuthStore.init()
+    console.log('Line auth initialized:', {
+      isLineApp: lineAuthStore.isLineApp,
+      profile: lineAuthStore.profile?.displayName
+    })
+  } catch (error) {
+    console.error('=== Line auth init error ===', error)
+    // エラーレポート送信
+    const { reportError } = await import('./lib/errorReporter')
+    reportError(error, 'APP_LINE_AUTH_INIT')
+  }
 
   unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    console.log('=== Auth state changed ===', user ? `User: ${user.uid}` : 'No user')
     if (user) {
       userStore.setUser(user)
       await fetchCustomerName(user)
       unsubscribeMessages = subscribeUnread(user.uid) // 監視開始
+      console.log('User setup complete:', userStore.customerName)
       // 【一時ログ】LINEアプリ内ならLINE User IDをFirestoreに記録
-      if (lineAuthStore.isLineApp) {
-        try {
-          const profile = await liff.getProfile()
-          await setDoc(doc(db, 'tmp_line_uid_log', profile.userId), {
-            lineUserId: profile.userId,
-            displayName: profile.displayName,
-            firebaseUid: user.uid,
-            logged_at: Timestamp.now()
-          })
-        } catch (e) { /* ignore */ }
-      }
+      // if (lineAuthStore.isLineApp) {
+      //   try {
+      //     const profile = await liff.getProfile()
+      //     await setDoc(doc(db, 'tmp_line_uid_log', profile.userId), {
+      //       lineUserId: profile.userId,
+      //       displayName: profile.displayName,
+      //       firebaseUid: user.uid,
+      //       logged_at: Timestamp.now()
+      //     })
+      //   } catch (e) { /* ignore */ }
+      // }
     } else {
       userStore.setUser(null)
       userStore.setCustomerName('')
@@ -124,11 +139,10 @@ const goToMessages = () => {
   router.push('/messages')
 }
 
-// デバッグ用の環境変数
-const liffId = import.meta.env.VITE_MINI_APP_ID || '未設定'
-const envMode = import.meta.env.MODE || 'unknown'
-const currentUrl = typeof window !== 'undefined' ? window.location.href : ''
-const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includes('Line')
+const retryInit = async () => {
+  lineAuthStore.error = null
+  await lineAuthStore.init()
+}
 </script>
 
 <template>
@@ -136,22 +150,15 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
   <div v-if="lineAuthStore.isInitializing" class="app-loading">
     <img src="/LINE_spinner_dark.svg" alt="読み込み中" class="loading-spinner" />
     <p class="loading-text">読み込み中...</p>
-    <p v-if="lineAuthStore.error" class="error-text">
-      {{ lineAuthStore.error }}
-    </p>
-    <!-- デバッグ情報 -->
-    <div class="debug-info">
-      <p style="font-size: 12px; color: #fff; margin-top: 20px; text-align: center; line-height: 1.6;">
-        URL: {{ currentUrl }}<br>
-        LIFF ID: {{ liffId }}<br>
-        UserAgent: {{ isLineApp ? 'LINE' : 'ブラウザ' }}<br>
-        Mode: {{ envMode }}
-      </p>
-      <!-- スキップボタン（5秒後に表示） -->
-      <button @click="lineAuthStore.isInitializing = false" class="skip-btn"
-        style="margin-top: 20px; padding: 10px 20px; background: rgba(255,255,255,0.3); border: 1px solid white; color: white; border-radius: 4px; cursor: pointer;">
-        スキップして続行
-      </button>
+  </div>
+
+  <!-- LINE初期化エラー画面 -->
+  <div v-else-if="lineAuthStore.error" class="app-error">
+    <div class="error-container">
+      <div class="error-icon">⚠️</div>
+      <h2 class="error-title">初期化エラー</h2>
+      <p class="error-message">{{ lineAuthStore.error }}</p>
+      <button @click="retryInit" class="retry-btn">再試行</button>
     </div>
   </div>
 
@@ -223,6 +230,67 @@ const isLineApp = typeof navigator !== 'undefined' && navigator.userAgent.includ
   font-size: 1.2rem;
   font-weight: bold;
   letter-spacing: 0.1em;
+}
+
+/* エラー画面 */
+.app-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem;
+}
+
+.error-container {
+  background: white;
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.error-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.error-title {
+  color: #e74c3c;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  font-weight: bold;
+}
+
+.error-message {
+  color: #555;
+  font-size: 1rem;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  word-break: break-word;
+}
+
+.retry-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.retry-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.retry-btn:active {
+  transform: translateY(0);
 }
 
 .error-text {
@@ -432,7 +500,7 @@ main {
     background: transparent;
     border: none;
     cursor: pointer;
-    z-index: 102;
+    z-index: 152;
   }
 
   .bar {
@@ -467,7 +535,7 @@ main {
     justify-content: flex-start;
     transform: translateX(100%);
     transition: transform 0.3s ease-in-out;
-    z-index: 101;
+    z-index: 151;
     box-shadow: -4px 0 10px rgba(0, 0, 0, 0.3);
   }
 
@@ -533,6 +601,6 @@ main {
   width: 100%;
   height: 100vh;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
+  z-index: 150;
 }
 </style>
