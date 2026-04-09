@@ -23,6 +23,5 @@ export const storage = getStorage(app)
 export const messaging = getMessaging(app)
 
 // VAPIDキー (Firebaseコンソール > プロジェクト設定 > Cloud Messaging > ウェブ設定 で生成した鍵)
-// 開発環境用
-export const VAPID_KEY = "BFBlmGzyMviT22QFy7sx9lmphmOjX-Lat-ERapY3bpefMFVkxJcZraUawKlvbKmngzruvxWYzQgKgVc1G41EdmU";
+export const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
