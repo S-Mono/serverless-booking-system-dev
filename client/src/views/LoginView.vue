@@ -13,7 +13,7 @@ import {
   browserLocalPersistence,
   type User
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import liff from '@line/liff'
 import { useLineAuthStore } from '../stores/lineAuth'
 
@@ -57,7 +57,7 @@ const handlePhoneInput = (event: Event) => {
   phoneNumber.value = formatPhoneNumber(input.value)
 }
 
-const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string, nameKanji?: string) => {
+const createCustomerData = async (user: User, provider: 'google' | 'line' | 'phone', name?: string, nameKanji?: string, lineUserId?: string) => {
   try {
     console.log('[createCustomerData] Starting with provider:', provider)
     console.log('[createCustomerData] User email:', user.email)
@@ -77,12 +77,19 @@ const createCustomerData = async (user: User, provider: 'google' | 'line' | 'pho
         is_existing_customer: false,
         preferred_category: 'barber',
         provider: provider,
+        ...(lineUserId ? { line_user_id: lineUserId } : {}),
         created_at: Timestamp.now(),
         updated_at: Timestamp.now()
       })
       console.log('[createCustomerData] Customer document created successfully')
     } else {
-      console.log('[createCustomerData] Customer document already exists')
+      // 既存ユーザーの場合、line_user_idが未設定なら更新する
+      if (lineUserId && !docSnap.data()?.line_user_id) {
+        await updateDoc(docRef, { line_user_id: lineUserId, updated_at: Timestamp.now() })
+        console.log('[createCustomerData] Updated line_user_id for existing customer')
+      } else {
+        console.log('[createCustomerData] Customer document already exists')
+      }
     }
   } catch (e) {
     console.error('顧客データ作成エラー:', e)
@@ -217,7 +224,7 @@ const autoLoginWithLine = async () => {
     }
 
     console.log('Creating customer data...')
-    await createCustomerData(user, 'line', lineName, lineName)
+    await createCustomerData(user, 'line', lineName, lineName, lineUserId)
     console.log('Customer data created successfully')
 
     // 【一時ログ】LINE User ID を Firestore に記録（確認後削除）

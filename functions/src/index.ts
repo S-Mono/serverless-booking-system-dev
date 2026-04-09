@@ -74,6 +74,48 @@ const createTransporter = () => {
   return nodemailer.createTransport(config);
 };
 
+const sendLineMessageToCustomer = async (
+  lineUserId: string,
+  text: string,
+  reservationId: string
+): Promise<void> => {
+  const messagingToken = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
+
+  if (!messagingToken) {
+    logger.warn(
+      "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN not configured, skipping customer push",
+      {reservationId}
+    );
+    return;
+  }
+
+  try {
+    await axios.post(
+      "https://api.line.me/v2/bot/message/push",
+      {
+        to: lineUserId,
+        messages: [{type: "text", text}],
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${messagingToken}`,
+        },
+      }
+    );
+    logger.info("LINE push sent to customer", {reservationId, lineUserId});
+  } catch (error: unknown) {
+    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    logger.error("Failed to send LINE push to customer", {
+      reservationId,
+      lineUserId,
+      error: errorObj.message,
+      data: errorObj.response?.data,
+    });
+    // 顧客へのLINE送信失敗は致命的エラーとせず続行
+  }
+};
+
 /**
  * LINE Messaging API を使って admin_line_users コレクションの全ユーザーに
  * プッシュメッセージを送信する。
@@ -284,6 +326,24 @@ export const onReservationCreated = onDocumentCreated(
       "👤 " + customerName + "様\n" +
       "✂️ " + menuName;
     await sendLineMessageToAdmins(lineText, snap.id);
+
+    // ── 顧客の LINE アカウントにも予約受付確認を送信 ──────────────────
+    const customerId = reservation.customer_id;
+    if (customerId) {
+      const customerDoc = await admin.firestore()
+        .collection("customers")
+        .doc(customerId)
+        .get();
+      const lineUserId = customerDoc.data()?.line_user_id;
+      if (lineUserId) {
+        const confirmText =
+          "✅ 予約リクエストを受け付けました\n\n" +
+          "📅 " + dateStr + "\n" +
+          "✂️ " + menuName + "\n\n" +
+          "担当スタッフより確定のご連絡をお待ちください。";
+        await sendLineMessageToCustomer(lineUserId, confirmText, snap.id);
+      }
+    }
   }
 );
 

@@ -6,7 +6,6 @@ import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, 
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
-import { liff } from '@line/liff'
 import { reportLiffError } from '../lib/errorReporter'
 
 const dialog = useDialogStore()
@@ -346,30 +345,6 @@ const submitReservation = async () => {
       is_read: false,
       created_at: Timestamp.now()
     })
-
-    // 1. LIFF環境（LINEアプリ内）かどうかを確認
-    if (lineAuthStore.isLineApp) {
-      const confirmLine = await dialog.open(
-        'LINE公式アカウントに予約控えを送信しますか？\n送信するとスタッフと直接チャットができるようになります。',
-        { title: 'LINE連携', cancelText: 'いいえ', confirmText: 'はい' }
-      )
-
-      if (confirmLine) {
-        const lineMsg = `【予約控え】\n以下の日時で仮予約を承りました。\n\n日時: ${dateStr}\nメニュー: ${selectedMenus.value.map(m => m.title).join(', ')}\n担当: ${staffName}\n`
-
-        try {
-          // 2. ユーザーの代わりにメッセージを送信
-          await liff.sendMessages([{ type: 'text', text: lineMsg }])
-        } catch (e) {
-          console.error('LINE送信失敗:', e)
-          // 3. 失敗（権限不足など）した場合はURLスキームで誘導
-          const lineId = '貴店のLINE_ID' // 例: @shop_id
-          const fallbackUrl = `https://line.me/R/oaMessage/${lineId}/?${encodeURIComponent(lineMsg)}`
-          await dialog.alert('直接送信に失敗しました。次の画面で「送信」を押して控えを完了してください。')
-          window.location.href = fallbackUrl
-        }
-      }
-    }
 
     await dialog.alert('予約リクエストを送信しました！\nお店からの確定をお待ちください。')
     showModal.value = false;
