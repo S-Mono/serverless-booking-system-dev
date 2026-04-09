@@ -6,6 +6,7 @@ import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, 
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
+import { liff } from '@line/liff'
 import { reportLiffError } from '../lib/errorReporter'
 
 const dialog = useDialogStore()
@@ -337,6 +338,9 @@ const submitReservation = async () => {
 
     // 🟢 追加: 予約受付メッセージを送信
     const dateStr = startDate.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    // リセット前にLINEメッセージ内容を確定する
+    const staffNameForLine = availableStaffs.value.find(s => s.id === selectedStaffId.value)?.name ?? ''
+    const lineMsg = `【予約リクエスト】\n日時: ${dateStr}\nメニュー: ${selectedMenus.value.map(m => m.title).join(', ')}\n担当: ${staffNameForLine}`
     await addDoc(collection(db, 'messages'), {
       customer_id: customerProfile.value?.id || uid,
       reservation_id: resRef.id,
@@ -351,6 +355,29 @@ const submitReservation = async () => {
     reservationDate.value = '';
     selectedTime.value = '';
     selectedMenus.value = []
+
+    // LINEで予約確認メッセージを公式アカウントに送信
+    const lineOaId = import.meta.env.VITE_LINE_OA_ID
+    if (lineOaId) {
+      const sendMsg = await dialog.open(
+        '予約内容の確認メッセージをLINE公式アカウントに送りますか？',
+        { title: 'LINEで連絡', cancelText: 'あとで', confirmText: '送信する' }
+      )
+      if (sendMsg) {
+        let sent = false
+        if (lineAuthStore.isLineApp) {
+          try {
+            await liff.sendMessages([{ type: 'text', text: lineMsg }])
+            sent = true
+          } catch {
+            // チャット起点でない場合はURLスキームへフォールバック
+          }
+        }
+        if (!sent) {
+          window.location.href = `https://line.me/R/oaMessage/${lineOaId}/?text=${encodeURIComponent(lineMsg)}`
+        }
+      }
+    }
   } catch (error: any) {
     console.error(error); await dialog.alert(error.message, 'エラー')
   } finally {
