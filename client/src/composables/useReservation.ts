@@ -84,7 +84,8 @@ export function useReservation(options?: UseReservationOptions) {
 
       // 2. 関連するメッセージを「キャンセル扱い」に更新（非クリティカル）
       try {
-        const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', reservationId))
+        const customerId = resDoc.data()?.customer_id
+        const msgQ = query(collection(db, 'messages'), where('reservation_id', '==', reservationId), where('customer_id', '==', customerId))
         const msgSnap = await getDocs(msgQ)
 
         const updatePromises = msgSnap.docs.map(d =>

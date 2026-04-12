@@ -83,7 +83,8 @@ const sendLineMessageToCustomer = async (
 
   if (!messagingToken) {
     logger.warn(
-      "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN not configured, skipping customer push",
+      "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN not configured," +
+        " skipping customer push",
       {reservationId}
     );
     return;
