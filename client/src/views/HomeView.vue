@@ -380,7 +380,7 @@ const submitReservation = async () => {
           <button class="tab-btn" :class="{ active: activeTab === 'beauty' }" @click="activeTab = 'beauty'">💇‍♀️
             美容</button>
           <button class="tab-btn" :class="{ active: activeTab === 'student' }" @click="activeTab = 'student'">🎓
-            学生<br>（中学まで）</button>
+            学生</button>
           <button class="tab-btn" :class="{ active: activeTab === 'chiro' }" @click="activeTab = 'chiro'">💆‍♂️
             カイロ</button>
         </div>
@@ -540,19 +540,28 @@ const submitReservation = async () => {
   max-width: 1024px;
   margin: 0 auto;
   width: 100%;
+  border-bottom: 1px solid #dcdde1;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 1rem;
+  padding: 0.6rem 0.25rem;
   border: none;
+  border-right: 1px solid #e0e0e0;
   background: none;
   font-weight: bold;
   color: #888;
   cursor: pointer;
   border-bottom: 3px solid transparent;
   transition: all 0.2s;
-  font-size: 1.1rem;
+  font-size: clamp(0.7rem, 3.2vw, 1rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-btn:last-child {
+  border-right: none;
 }
 
 .tab-btn:hover {
@@ -563,6 +572,7 @@ const submitReservation = async () => {
 .tab-btn.active {
   color: #3498db;
   border-bottom-color: #3498db;
+  background-color: rgba(52, 152, 219, 0.06);
 }
 
 .repeat-booking-area {
