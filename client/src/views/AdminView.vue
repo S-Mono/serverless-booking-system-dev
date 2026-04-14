@@ -5,7 +5,6 @@ import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, 
 import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 // プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
-import { utils, writeFile } from 'xlsx-js-style'
 import { getToken, onMessage } from 'firebase/messaging'
 
 const router = useRouter()
@@ -1356,6 +1355,7 @@ onUnmounted(() => {
 // Excel出力関数
 const exportReservationsToExcel = async () => {
   try {
+    const { utils, writeFile } = await import('xlsx-js-style')
     // 左パネルと同じ表示期間の予約を取得（selectedDateから30日分）
     const startDate = new Date(selectedDate.value)
     startDate.setHours(0, 0, 0, 0)
