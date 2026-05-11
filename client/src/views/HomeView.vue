@@ -7,6 +7,13 @@ import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
 import { reportLiffError } from '../lib/errorReporter'
+import {
+  applyTimeToDate,
+  getBusinessHoursForDate,
+  getDefaultShopConfig,
+  normalizeShopConfig,
+  type ShopConfigData
+} from '../lib/businessHours'
 
 const dialog = useDialogStore()
 const router = useRouter()
@@ -26,11 +33,10 @@ interface Menu {
 }
 interface Staff { id: string; name: string; display_name: string; roles: { accepts_new_customer: boolean; accepts_free_booking: boolean }; is_working: boolean; }
 interface CustomerProfile { id: string; name_kanji?: string; name_kana: string; phone_number?: string; is_existing_customer: boolean; preferred_category?: string; }
-interface ShopConfig { business_hours: { start: string; end: string }; time_slot_interval: number; tax_rate: number; }
 
 const menus = ref<Menu[]>([])
 const staffs = ref<Staff[]>([])
-const shopConfig = ref<ShopConfig>({ business_hours: { start: '09:00', end: '19:00' }, time_slot_interval: 30, tax_rate: 10 })
+const shopConfig = ref<ShopConfigData>(getDefaultShopConfig())
 const loading = ref(true)
 const processing = ref(false)
 const currentUser = ref<any>(null)
@@ -50,6 +56,16 @@ const activeTab = ref<'barber' | 'beauty' | 'student' | 'chiro'>('barber')
 
 const minDate = computed(() => {
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 10)
+})
+
+const selectedBusinessHours = computed(() => {
+  if (!reservationDate.value) return null
+  return getBusinessHoursForDate(shopConfig.value, new Date(reservationDate.value))
+})
+
+const availabilityMessage = computed(() => {
+  if (selectedBusinessHours.value) return '❌ この日の空き枠はありません'
+  return '❌ この日は休業日です'
 })
 
 const displayedMenus = computed(() => {
@@ -208,12 +224,7 @@ onMounted(async () => {
         staffs.value = staffSnap.docs.map(doc => { const d = doc.data(); return { id: doc.id, ...d, is_working: d.is_working ?? true } }) as Staff[]
         const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
         if (configSnap.exists()) {
-          const data = configSnap.data()
-          shopConfig.value = {
-            business_hours: data.business_hours || { start: '09:00', end: '19:00' },
-            time_slot_interval: data.time_slot_interval || 30,
-            tax_rate: data.tax_rate ?? 10
-          }
+          shopConfig.value = normalizeShopConfig(configSnap.data())
         }
       } catch (error) { dialog.alert('データの読み込みに失敗しました', 'エラー') } finally { loading.value = false }
     } else { loading.value = false }
@@ -231,12 +242,13 @@ const fetchAvailableSlots = async () => {
     const snapshot = await getDocs(q)
     const busySlots = snapshot.docs.map(doc => doc.data()).filter(d => d.status !== 'cancelled').map(d => ({ start: d.start_at.toDate().getTime(), end: d.end_at.toDate().getTime() }))
 
-    const openTime = parseInt(shopConfig.value.business_hours.start.split(':')[0]!, 10)
-    const closeTime = parseInt(shopConfig.value.business_hours.end.split(':')[0]!, 10)
+    const businessHours = getBusinessHoursForDate(shopConfig.value, targetDate)
+    if (!businessHours) return
+
     const interval = shopConfig.value.time_slot_interval || 30
     const requiredDuration = totalDuration.value
-    let current = new Date(targetDate); current.setHours(openTime, 0, 0, 0)
-    const closeDate = new Date(targetDate); closeDate.setHours(closeTime, 0, 0, 0)
+    let current = applyTimeToDate(targetDate, businessHours.start)
+    const closeDate = applyTimeToDate(targetDate, businessHours.end)
     const slots: Date[] = []
     const now = new Date().getTime()
     while (current.getTime() + (requiredDuration * 60000) <= closeDate.getTime()) {
@@ -304,8 +316,18 @@ const submitReservation = async () => {
   try {
     const now = new Date()
     if (startDate < now) throw new Error('過去の日時は選択できません。')
+
+    const businessHours = getBusinessHoursForDate(shopConfig.value, startDate)
+    if (!businessHours) throw new Error('選択日は休業日です。')
+
     const duration = totalDuration.value
     const endDate = new Date(startDate.getTime() + duration * 60000)
+    const businessStart = applyTimeToDate(startDate, businessHours.start)
+    const businessEnd = applyTimeToDate(startDate, businessHours.end)
+    if (startDate < businessStart || endDate > businessEnd) {
+      throw new Error(`営業時間外です。${businessHours.start}〜${businessHours.end} の範囲で選択してください。`)
+    }
+
     const startTimestamp = Timestamp.fromDate(startDate); const endTimestamp = Timestamp.fromDate(endDate)
     const uid = currentUser.value?.uid || 'unknown'
     const limitQ = query(collection(db, 'reservations'), where('customer_id', '==', customerProfile.value?.id || uid), where('start_at', '>=', Timestamp.now()), where('status', '!=', 'cancelled'))
@@ -347,6 +369,28 @@ const submitReservation = async () => {
     })
 
     await dialog.alert('予約リクエストを送信しました！\nお店からの確定をお待ちください。')
+
+    // LINEアプリ内の場合、控えメッセージを自分のトーク画面に送信
+    try {
+      const liff = (await import('@line/liff')).default
+      if (liff.isInClient()) {
+        const sendLine = await dialog.open(
+          'LINEのトーク画面に予約控えを送信しますか？',
+          { title: '控えを送る', confirmText: '送信する', cancelText: 'スキップ' }
+        )
+        if (sendLine) {
+          const staffName = availableStaffs.value.find(s => s.id === selectedStaffId.value)?.name || '担当者'
+          await liff.sendMessages([{
+            type: 'text',
+            text: `【予約控え】\n日時: ${dateStr}\n担当: ${staffName}\nメニュー: ${selectedMenus.value.map(m => m.title).join(', ')}\n合計: ¥${totalAmount.value.toLocaleString()}`
+          }])
+        }
+      }
+    } catch (e) {
+      // LINE控え送信失敗はサイレントに無視（予約自体は完了済み）
+      console.warn('LINE控え送信スキップ:', e)
+    }
+
     showModal.value = false;
     reservationDate.value = '';
     selectedTime.value = '';
@@ -450,12 +494,12 @@ const submitReservation = async () => {
         </div>
         <div v-if="selectedStaffId && reservationDate" class="availability-section">
           <h4>📅 {{ formatDateJP(reservationDate) }} の空き状況</h4>
-          <p class="avail-desc">ご希望の時間を選択してください（所要時間: {{ totalDuration }}分）</p>
+          <p v-if="selectedBusinessHours" class="avail-desc">ご希望の時間を選択してください（営業時間: {{ selectedBusinessHours.start }} - {{ selectedBusinessHours.end }} / 所要時間: {{ totalDuration }}分）</p>
           <div v-if="availableSlots.length > 0" class="slot-grid"><button v-for="time in availableSlots"
               :key="time.getTime()" class="slot-btn" :class="{ selected: selectedTime === formatTime(time) }"
               @click="selectTime(time)">{{
                 selectedTime === formatTime(time) ? '✓ ' + formatTime(time) : formatTime(time) }}</button></div>
-          <p v-else class="no-slots-msg">❌ この日の空き枠はありません</p>
+          <p v-else class="no-slots-msg">{{ availabilityMessage }}</p>
         </div>
         <div class="form-group"><label>ご要望・メモ (任意)</label><textarea v-model="customerNote"
             placeholder="髪型の希望など"></textarea></div>

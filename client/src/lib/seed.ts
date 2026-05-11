@@ -1,6 +1,7 @@
 import { db } from './firebase'
 import { doc, setDoc, collection, getDocs, deleteDoc, writeBatch } from 'firebase/firestore'
 import { useDialogStore } from '../stores/dialog'
+import { normalizeShopConfig } from './businessHours'
 
 // コレクションの中身を全て削除するヘルパー関数
 const clearCollection = async (collectionName: string) => {
@@ -40,12 +41,16 @@ export const seedDatabase = async () => {
     ])
 
     // 2. 店舗設定
-    await setDoc(doc(db, 'shop_config', 'default_config'), {
+    const shopConfig = normalizeShopConfig({
       time_slot_interval: 30,
       business_hours: { start: '09:00', end: '19:00' },
       holiday_weekdays: [1, 2], // 月火定休
       closed_dates: [],
-      tax_rate: 10,
+      tax_rate: 10
+    })
+
+    await setDoc(doc(db, 'shop_config', 'default_config'), {
+      ...shopConfig,
       max_future_booking_months: 2
     })
 

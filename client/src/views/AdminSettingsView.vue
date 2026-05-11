@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, getDoc } from 'firebase/firestore'
@@ -7,17 +7,16 @@ import { signOut } from 'firebase/auth'
 import { seedDatabase } from '../lib/seed'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
+import {
+  type ShopConfigData,
+  deriveBusinessHoursSummary,
+  deriveHolidayWeekdays,
+  getDefaultShopConfig,
+  normalizeShopConfig
+} from '../lib/businessHours'
 
 const dialog = useDialogStore()
 const router = useRouter()
-
-// --- 型定義 ---
-interface ShopConfig {
-  holiday_weekdays: number[]
-  closed_dates: string[]
-  business_hours: { start: string; end: string }
-  tax_rate: number
-}
 
 interface Staff {
   id: string; name: string; display_name: string; order_priority: number;
@@ -31,12 +30,7 @@ const staffs = ref<Staff[]>([])
 const loading = ref(true)
 
 // 店舗設定データ
-const config = ref<ShopConfig>({
-  holiday_weekdays: [],
-  closed_dates: [],
-  business_hours: { start: '09:00', end: '19:00' },
-  tax_rate: 10
-})
+const config = ref<ShopConfigData>(getDefaultShopConfig())
 
 const newStaff = ref({
   code: '',
@@ -47,6 +41,7 @@ const newStaff = ref({
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
 const tempClosedDate = ref('')
+const weeklyClosedDays = computed(() => deriveHolidayWeekdays(config.value.weekday_business_hours))
 
 // --- データ取得 ---
 const fetchData = async () => {
@@ -61,13 +56,7 @@ const fetchData = async () => {
 
     const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
     if (configSnap.exists()) {
-      const data = configSnap.data() as any
-      config.value = {
-        holiday_weekdays: data.holiday_weekdays || [],
-        closed_dates: data.closed_dates || [],
-        business_hours: data.business_hours || { start: '09:00', end: '19:00' },
-        tax_rate: data.tax_rate ?? 10
-      }
+      config.value = normalizeShopConfig(configSnap.data())
     }
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
@@ -75,12 +64,25 @@ const fetchData = async () => {
 // --- 設定保存 ---
 const saveConfig = async () => {
   try {
+    const weekdayBusinessHours = config.value.weekday_business_hours.map(day => ({ ...day }))
+    const holidayWeekdays = deriveHolidayWeekdays(weekdayBusinessHours)
+    const businessHours = deriveBusinessHoursSummary(weekdayBusinessHours, config.value.business_hours)
+
     await updateDoc(doc(db, 'shop_config', 'default_config'), {
-      holiday_weekdays: config.value.holiday_weekdays,
+      holiday_weekdays: holidayWeekdays,
       closed_dates: config.value.closed_dates,
-      business_hours: config.value.business_hours,
+      business_hours: businessHours,
+      weekday_business_hours: weekdayBusinessHours,
       tax_rate: Number(config.value.tax_rate)
     })
+
+    config.value = normalizeShopConfig({
+      ...config.value,
+      holiday_weekdays: holidayWeekdays,
+      business_hours: businessHours,
+      weekday_business_hours: weekdayBusinessHours
+    })
+
     dialog.alert('店舗設定を保存しました')
   } catch (e) { console.error(e); dialog.alert('保存失敗') }
 }
@@ -182,11 +184,10 @@ onMounted(() => { fetchData() })
               <h3>📅 カレンダー・休日設定</h3>
               <div class="config-section">
                 <h4>定休日 (毎週)</h4>
-                <div class="weekdays-group">
-                  <label v-for="(day, index) in weekdays" :key="index" class="checkbox-label">
-                    <input type="checkbox" :value="index" v-model="config.holiday_weekdays">
-                    {{ day }}
-                  </label>
+                <p class="helper-text">曜日別営業時間で休業にした曜日が自動で反映されます。</p>
+                <div class="tags-list">
+                  <span v-if="weeklyClosedDays.length === 0" class="date-tag">定休日なし</span>
+                  <span v-for="index in weeklyClosedDays" :key="index" class="date-tag">{{ weekdays[index] }}曜</span>
                 </div>
               </div>
               <div class="config-section">
@@ -207,21 +208,32 @@ onMounted(() => { fetchData() })
             </div>
 
             <div class="setting-card time-card">
-              <h3>⏰ タイムライン設定</h3>
+              <h3>⏰ 営業時間設定</h3>
+              <p class="desc">曜日ごとに予約可能な開始・終了時間を設定します。</p>
               <div class="config-section">
-                <div class="input-row">
-                  <div class="input-group">
-                    <label>開始</label>
-                    <input type="time" v-model="config.business_hours.start" />
-                  </div>
-                  <div class="input-group">
-                    <label>終了</label>
-                    <input type="time" v-model="config.business_hours.end" />
+                <div class="weekday-hours-list">
+                  <div v-for="(dayConfig, index) in config.weekday_business_hours" :key="weekdays[index]" class="weekday-hours-row">
+                    <label class="weekday-toggle">
+                      <input type="checkbox" v-model="dayConfig.is_open" />
+                      <span class="weekday-name">{{ weekdays[index] }}</span>
+                    </label>
+                    <div class="input-row weekday-time-row" :class="{ disabled: !dayConfig.is_open }">
+                      <div class="input-group">
+                        <label>開始</label>
+                        <input type="time" v-model="dayConfig.start"
+                          :disabled="!dayConfig.is_open" />
+                      </div>
+                      <div class="input-group">
+                        <label>終了</label>
+                        <input type="time" v-model="dayConfig.end"
+                          :disabled="!dayConfig.is_open" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
               <div class="action-row">
-                <button @click="saveConfig" class="save-main-btn">時間を保存</button>
+                <button @click="saveConfig" class="save-main-btn">営業時間を保存</button>
               </div>
             </div>
 
@@ -447,6 +459,12 @@ onMounted(() => { fetchData() })
   margin-bottom: 0.5rem;
 }
 
+.helper-text {
+  font-size: 0.85rem;
+  color: #777;
+  margin: 0 0 0.75rem;
+}
+
 .weekdays-group {
   display: flex;
   gap: 0.8rem;
@@ -521,6 +539,43 @@ onMounted(() => { fetchData() })
   display: flex;
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.weekday-hours-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.weekday-hours-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.weekday-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.weekday-name {
+  min-width: 1.5rem;
+}
+
+.weekday-time-row {
+  margin-bottom: 0;
+}
+
+.weekday-time-row.disabled {
+  opacity: 0.5;
 }
 
 .input-group {
@@ -678,6 +733,16 @@ onMounted(() => { fetchData() })
   .staff-grid {
     flex-direction: column;
     gap: 1rem;
+  }
+
+  .weekday-hours-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .weekday-time-row {
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .input-group {

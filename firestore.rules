@@ -43,17 +43,11 @@ service cloud.firestore {
     match /customers/{userId} {
       allow read, write: if isAdmin();
       allow read, write: if isOwner(userId);
-      // 電話番号でのログイン時に顧客を検索できるよう許可（認証前のクエリを許可）
-      allow get, list: if true;
+      allow get, list: if true;  // 電話番号ログイン用の検索を許可
+      allow create: if isAuthenticated() && isOwner(userId);  // 新規ユーザー登録時の作成を許可
     }
 
-    // � ユーザーデータ (users)
-    match /users/{userId} {
-      allow read: if isAdmin();
-      allow read, write: if isOwner(userId);
-    }
-
-    // �📋 マスタデータ
+    // 📋 マスタデータ
     match /menus/{menuId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -72,13 +66,12 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // カルテ
+    // 🏥 顧客カルテ (customer_medical_records) - 管理者のみ
     match /customer_medical_records/{document=**} {
-      allow read, create, update, delete: if request.auth != null && 
-      request.auth.token.admin == true;
+      allow read, create, update, delete: if isAdmin();
     }
 
-    // 🔒 パスワードリセットリクエスト
+    // � パスワードリセットリクエスト
     match /password_reset_requests/{requestId} {
       // パスワードリセット機能のため、読み取りも許可
       allow read: if true;
@@ -86,16 +79,14 @@ service cloud.firestore {
       allow update: if true; // トークン使用済みフラグの更新用
     }
 
-    // 🐛 エラーログ (error_logs) - 審査時のエラー収集用
+    // �🐛 エラーログ (error_logs) - 審査時のエラー収集用
     match /error_logs/{logId} {
       allow read: if isAdmin();
       allow create: if true;  // 誰でも書き込み可能（エラー発生時に記録するため）
     }
-
     // 🔍 【一時】LINE User ID ログ（確認後削除）
     match /tmp_line_uid_log/{docId} {
       allow read: if isAdmin();
       allow create, update: if isAuthenticated();
-    }
-  }
+    }  }
 }

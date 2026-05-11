@@ -7,7 +7,7 @@
         <h2>📋 {{ customerName }} さんのカルテ</h2>
       </div>
       <div class="header-right">
-        <div class="customer-phone" v-if="customerPhone">📞 {{ customerPhone }}</div>
+        <div class="customer-phone" v-if="customerPhone">📞 {{ formatPhoneNumber(customerPhone) }}</div>
       </div>
     </header>
 
@@ -54,6 +54,18 @@
     <!-- 詳細モーダル -->
     <RecordDetailModal v-if="showDetailModal && selectedRecord" :is-open="showDetailModal" :record="selectedRecord"
       :staff-list="staffList" @close="showDetailModal = false" @edit="navigateToEdit" @delete="handleDelete" />
+
+    <!-- エディタダイアログ -->
+    <RecordEditorDialog 
+      :is-open="showEditorDialog" 
+      :customer-id="customerId" 
+      :customer-name="customerName" 
+      :customer-phone="formatPhoneNumber(customerPhone)"
+      :record-id="editingRecordId"
+      :existing-record="editingRecord"
+      @close="showEditorDialog = false" 
+      @saved="handleEditorSaved" 
+    />
   </div>
 </template>
 
@@ -65,6 +77,7 @@ import { useDialogStore } from '../stores/dialog'
 import { db, auth } from '../lib/firebase'
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
 import RecordDetailModal from '../components/RecordDetailModal.vue'
+import RecordEditorDialog from '../components/RecordEditorDialog.vue'
 import type { Timestamp } from 'firebase/firestore'
 
 const route = useRoute()
@@ -79,8 +92,32 @@ const customerName = ref('')
 const customerPhone = ref('')
 const staffList = ref<Array<{ id: string; name: string }>>([])
 
+// 電話番号フォーマット
+const formatPhoneNumber = (value: string) => {
+  if (!value) return ''
+  const numbers = value.replace(/[^0-9]/g, '')
+  if (numbers.length <= 3) return numbers
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 8) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
+  if (numbers.length === 9) return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  if (numbers.length === 10) {
+    if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
+    }
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  }
+  if (numbers.length >= 11) return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  return numbers
+}
+
 const showDetailModal = ref(false)
 const selectedRecord = ref<MedicalRecord | null>(null)
+
+// エディタダイアログの状態
+const showEditorDialog = ref(false)
+const editingRecord = ref<MedicalRecord | null>(null)
+const editingRecordId = ref<string | undefined>(undefined)
 
 onMounted(async () => {
   try {
@@ -179,9 +216,11 @@ const truncateText = (text: string, maxLength: number) => {
   return text.substring(0, maxLength) + '...'
 }
 
-// カルテ作成画面へ
+// カルテ作成ダイアログを開く
 const navigateToCreate = () => {
-  router.push(`/admin/customer-records/${customerId}/edit`)
+  editingRecord.value = null
+  editingRecordId.value = undefined
+  showEditorDialog.value = true
 }
 
 // カルテ詳細を表示
@@ -190,10 +229,15 @@ const showDetail = (record: MedicalRecord) => {
   showDetailModal.value = true
 }
 
-// カルテ編集画面へ
+// カルテ編集ダイアログを開く
 const navigateToEdit = (recordId: string) => {
   showDetailModal.value = false
-  router.push(`/admin/customer-records/${customerId}/edit/${recordId}`)
+  const record = recordStore.records.find(r => r.id === recordId)
+  if (record) {
+    editingRecord.value = record
+    editingRecordId.value = recordId
+    showEditorDialog.value = true
+  }
 }
 
 // カルテ削除
@@ -209,6 +253,12 @@ const handleDelete = async (recordId: string) => {
     console.error('Failed to delete record:', error)
     dialog.alert('削除に失敗しました: ' + error.message)
   }
+}
+
+// エディタダイアログが保存された後の処理
+const handleEditorSaved = async () => {
+  // カルテ一覧を再読み込み
+  await recordStore.fetchRecordsByCustomer(customerId)
 }
 </script>
 

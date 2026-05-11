@@ -7,7 +7,7 @@
 
     <div class="customer-info-banner">
       <span class="customer-name">👤 {{ customerName }}</span>
-      <span v-if="customerPhone" class="customer-phone">📞 {{ customerPhone }}</span>
+      <span v-if="customerPhone" class="customer-phone">📞 {{ formatPhoneNumber(customerPhone) }}</span>
     </div>
 
     <form @submit.prevent="handleSubmit" class="editor-form">
@@ -71,6 +71,25 @@ const recordId = ref(recordIdParam)
 const customerName = ref('')
 const customerPhone = ref('')
 const isSaving = ref(false)
+
+// 電話番号フォーマット
+const formatPhoneNumber = (value: string) => {
+  if (!value) return ''
+  const numbers = value.replace(/[^0-9]/g, '')
+  if (numbers.length <= 3) return numbers
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
+  if (numbers.length === 8) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`
+  if (numbers.length === 9) return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  if (numbers.length === 10) {
+    if (['090', '080', '070', '050'].includes(numbers.slice(0, 3))) {
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`
+    }
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6)}`
+  }
+  if (numbers.length >= 11) return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
+  return numbers
+}
 
 interface PhotoData {
   url?: string

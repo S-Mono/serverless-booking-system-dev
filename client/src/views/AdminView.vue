@@ -6,6 +6,15 @@ import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 // プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
 import { getToken, onMessage } from 'firebase/messaging'
+import {
+  getBusinessHoursForDate,
+  getDefaultShopConfig,
+  getTimelineHourBounds,
+  minutesToTimeString,
+  normalizeShopConfig,
+  timeStringToMinutes,
+  type ShopConfigData
+} from '../lib/businessHours'
 
 const router = useRouter()
 const dialog = useDialogStore()
@@ -23,7 +32,6 @@ interface Reservation {
   customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
 }
 interface Menu { id: string; title: string; duration_min: number; price: number }
-interface ShopConfig { holiday_weekdays: number[]; closed_dates: string[]; business_hours: { start: string; end: string }; tax_rate: number }
 
 const staffs = ref<Staff[]>([])
 // reservations for the left-side list (from selectedDate onward)
@@ -36,7 +44,7 @@ const showHistory = ref(false)
 const historyDays = ref(30) // 履歴表示期間（日数）
 
 const menus = ref<Menu[]>([])
-const shopConfig = ref<ShopConfig>({ holiday_weekdays: [], closed_dates: [], business_hours: { start: '09:00', end: '19:00' }, tax_rate: 10 })
+const shopConfig = ref<ShopConfigData>(getDefaultShopConfig())
 const loading = ref(true)
 // how many days to include in left-list window (from selectedDate 00:00)
 const listWindowDays = ref(30)
@@ -248,6 +256,12 @@ const timeLabels = computed(() => {
   return labels
 })
 
+const updateTimelineHours = () => {
+  const { startHour, endHour } = getTimelineHourBounds(shopConfig.value, selectedDate.value)
+  openHour.value = startHour
+  closeHour.value = Math.max(startHour + 1, endHour)
+}
+
 const changeDate = (diff: number) => {
   const d = new Date(selectedDate.value)
   d.setDate(d.getDate() + diff)
@@ -271,18 +285,11 @@ const initData = async (fetchMaster = true) => {
       menus.value = menuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Menu[]
       const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
       if (configSnap.exists()) {
-        const data = configSnap.data()
-        shopConfig.value = {
-          holiday_weekdays: data.holiday_weekdays || [],
-          closed_dates: data.closed_dates || [],
-          business_hours: data.business_hours || { start: '09:00', end: '19:00' },
-          tax_rate: data.tax_rate ?? 10
-        }
-        const hours = shopConfig.value.business_hours
-        if (hours?.start) openHour.value = parseInt(hours.start.split(':')[0]!, 10)
-        if (hours?.end) closeHour.value = parseInt(hours.end.split(':')[0]!, 10)
+        shopConfig.value = normalizeShopConfig(configSnap.data())
       }
     }
+
+    updateTimelineHours()
 
     const startOfDay = new Date(selectedDate.value); startOfDay.setHours(0, 0, 0, 0)
     const endOfDay = new Date(selectedDate.value); endOfDay.setDate(endOfDay.getDate() + 1); endOfDay.setHours(0, 0, 0, 0)
@@ -1395,17 +1402,16 @@ const exportReservationsToExcel = async () => {
     })
 
     // 営業時間の取得
-    const startHour = parseInt(shopConfig.value.business_hours.start.split(':')[0] as string)
-    const endHour = parseInt(shopConfig.value.business_hours.end.split(':')[0] as string)
+    const businessHours = getBusinessHoursForDate(shopConfig.value, startDate) ?? shopConfig.value.business_hours
+    const startMinutes = timeStringToMinutes(businessHours.start)
+    const endMinutes = timeStringToMinutes(businessHours.end)
 
     // 15分単位の時間枠を生成 (例: 09:00, 09:15, 09:30...)
     const timeSlots: string[] = []
-    for (let hour = startHour; hour < endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        timeSlots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
-      }
+    for (let minutes = startMinutes; minutes < endMinutes; minutes += 15) {
+      timeSlots.push(minutesToTimeString(minutes))
     }
-    timeSlots.push(`${String(endHour).padStart(2, '0')}:00`)
+    timeSlots.push(minutesToTimeString(endMinutes))
 
     // Excelデータ作成（横軸=時間、縦軸=項目）
     const worksheetData: any[] = []

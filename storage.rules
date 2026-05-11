@@ -9,7 +9,7 @@ service firebase.storage {
     // カルテ画像: 管理者のみ読み書き可能
     match /customer_medical_records/{customerId}/{recordId}/{allPaths=**} {
       allow read, write: if request.auth != null && 
-                            request.auth.token.is_admin == true;
+                            request.auth.token.admin == true;
     }
     
     // その他のファイルは全てブロック
