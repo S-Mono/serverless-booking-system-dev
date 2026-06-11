@@ -210,6 +210,7 @@ const sendLineMessageToCustomer = async (
 export const sendTemporaryReservationServiceMessage = onCall(
   {
     region: "asia-northeast1",
+    invoker: "public",
   },
   async (request) => {
     const userId = request.auth?.uid;
@@ -690,6 +691,7 @@ ${contact.created_at?.toDate().toLocaleString("ja-JP", {
 export const deleteUserAccount = onCall(
   {
     region: "asia-northeast1",
+    invoker: "public",
   },
   async (request) => {
     const userId = request.auth?.uid;
@@ -942,6 +944,7 @@ export const onPasswordResetRequest = onDocumentCreated(
 export const adminUpdatePassword = onCall(
   {
     region: "asia-northeast1",
+    invoker: "public",
   },
   async (request) => {
     const {uid, newPassword} = request.data;
@@ -1000,6 +1003,7 @@ export const adminUpdatePassword = onCall(
 export const resetPasswordWithToken = onCall(
   {
     region: "asia-northeast1",
+    invoker: "public",
   },
   async (request) => {
     const {token, newPassword} = request.data;

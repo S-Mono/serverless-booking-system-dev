@@ -375,7 +375,10 @@ const submitReservation = async () => {
     try {
       const liff = (await import('@line/liff')).default
       const liffAccessToken = liff.getAccessToken()
-      if (lineAuthStore.isLineApp && liffAccessToken) {
+      const firebaseUser = auth.currentUser
+      const idToken = firebaseUser ? await firebaseUser.getIdToken().catch(() => '') : ''
+
+      if (lineAuthStore.isLineApp && liffAccessToken && idToken) {
         const sendTemporaryReservationServiceMessage = httpsCallable(
           functions,
           'sendTemporaryReservationServiceMessage'
@@ -387,7 +390,7 @@ const submitReservation = async () => {
           buttonUrl
         })
       } else {
-        console.info('Skip service message: not in LINE app or no LIFF access token')
+        console.info('Skip service message: LINE app/auth token/liff access token not ready')
       }
     } catch (serviceMessageError) {
       console.warn('Temporary reservation service message failed:', serviceMessageError)
