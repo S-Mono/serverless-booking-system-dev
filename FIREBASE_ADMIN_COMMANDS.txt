@@ -135,3 +135,43 @@ cat users.json | jq '.users[] | {uid: .uid, email: .email, customClaims: .custom
 5. Firestore ルールで管理者判定はカスタムクレーム `admin: true` を使用
 
 ====================================================================
+
+11. Firestore PITR（Point-in-time Recovery）復旧操作
+====================================================================
+
+前提:
+- Google Cloud SDK（gcloud）をインストール済み
+- gcloud auth login 済み
+- Firestore PITR が有効
+
+# 開発環境でPITRウィンドウを確認
+cd C:\Users\Monou Satoshi\Documents\Dev\Sources\booking\develop
+pwsh -File .\tools\firestore-pitr.ps1 -Action list-window -Environment develop
+
+# 開発環境で復旧候補時刻を表示（Index付き）
+pwsh -File .\tools\firestore-pitr.ps1 -Action list-points -Environment develop -PointCount 24 -StepMinutes 10
+
+# 本番環境で復旧候補時刻を表示
+pwsh -File .\tools\firestore-pitr.ps1 -Action list-points -Environment product -PointCount 24 -StepMinutes 10
+
+# PITR時点から新DBへクローン（実行前はDry-run）
+pwsh -File .\tools\firestore-pitr.ps1 -Action clone-pitr -Environment product -DestinationDatabase restore-test
+
+# PITRクローンを実行（本番変更前に必ず復旧先DB名を確認）
+pwsh -File .\tools\firestore-pitr.ps1 -Action clone-pitr -Environment product -DestinationDatabase restore-test -Execute
+
+# バックアップ一覧を表示（利用可能な場合）
+pwsh -File .\tools\firestore-pitr.ps1 -Action list-backups -Environment product
+
+# バックアップから新DBへリストア（実行前はDry-run）
+pwsh -File .\tools\firestore-pitr.ps1 -Action restore-backup -Environment product -DestinationDatabase restore-from-backup -BackupName <BACKUP_RESOURCE_NAME>
+
+# バックアップリストアを実行
+pwsh -File .\tools\firestore-pitr.ps1 -Action restore-backup -Environment product -DestinationDatabase restore-from-backup -BackupName <BACKUP_RESOURCE_NAME> -Execute
+
+注意:
+1. 本番DBへ上書き復元するのではなく、まず別DB（例: restore-test）へ復元して検証すること
+2. クローン/リストア後は接続先Database IDをアプリまたは検証スクリプトで明示的に切り替えて検証すること
+3. `-Execute` を付けない限りAPI呼び出しは行われない（Dry-run）
+
+====================================================================
