@@ -258,7 +258,8 @@ export const sendTemporaryReservationServiceMessage = onCall(
       return {success: false, skipped: true, reason: "reservation-state"};
     }
 
-    const templateName = process.env.LINE_SERVICE_TEMPLATE_TEMPORARY_RESERVATION ||
+    const templateName =
+      process.env.LINE_SERVICE_TEMPLATE_TEMPORARY_RESERVATION ||
       "tempreserv_s_ja";
 
     try {
