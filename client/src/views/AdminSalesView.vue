@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ExcelJS from 'exceljs'
 import { db, auth } from '../lib/firebase'
 import { collection, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
@@ -18,6 +19,19 @@ interface DailySales {
     sales: number
     count: number
     reservations: Reservation[]
+}
+
+const downloadWorkbook = async (workbook: ExcelJS.Workbook, fileName: string) => {
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
 }
 
 const router = useRouter()
@@ -239,9 +253,7 @@ const togglePastData = async () => {
 
 // Excelエクスポート機能
 const exportToExcel = async () => {
-    // ワークブックを作成
-    const XLSX = await import('xlsx');
-    const wb = XLSX.utils.book_new()
+    const workbook = new ExcelJS.Workbook()
 
     // 現在の期間のシート
     const currentSheetData: any[][] = [
@@ -276,17 +288,14 @@ const exportToExcel = async () => {
         currentCount.value
     ])
 
-    const wsCurrents = XLSX.utils.aoa_to_sheet(currentSheetData)
-
-    // 列幅を設定
-    wsCurrents['!cols'] = [
-        { wch: 15 }, // 日付
-        { wch: 8 },  // 曜日
-        { wch: 15 }, // 売上
-        { wch: 10 }  // 予約件数
+    const currentSheet = workbook.addWorksheet('現在の期間')
+    currentSheet.addRows(currentSheetData)
+    currentSheet.columns = [
+        { width: 15 },
+        { width: 8 },
+        { width: 15 },
+        { width: 10 }
     ]
-
-    XLSX.utils.book_append_sheet(wb, wsCurrents, '現在の期間')
 
     // 過去の期間のシート（表示中の場合）
     if (showPastData.value && pastSalesData.value.length > 0) {
@@ -327,17 +336,14 @@ const exportToExcel = async () => {
             pastCount.value
         ])
 
-        const wsPast = XLSX.utils.aoa_to_sheet(pastSheetData)
-
-        // 列幅を設定
-        wsPast['!cols'] = [
-            { wch: 15 }, // 日付
-            { wch: 8 },  // 曜日
-            { wch: 15 }, // 売上
-            { wch: 10 }  // 予約件数
+        const pastSheet = workbook.addWorksheet('過去の期間')
+        pastSheet.addRows(pastSheetData)
+        pastSheet.columns = [
+            { width: 15 },
+            { width: 8 },
+            { width: 15 },
+            { width: 10 }
         ]
-
-        XLSX.utils.book_append_sheet(wb, wsPast, '過去の期間')
     }
 
     // ファイル名を生成（現在の日時を含む）
@@ -345,7 +351,7 @@ const exportToExcel = async () => {
     const filename = `売上分析_${currentStartDate.value}_${currentEndDate.value}_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`
 
     // ファイルをダウンロード
-    XLSX.writeFile(wb, filename)
+    await downloadWorkbook(workbook, filename)
 }
 </script>
 

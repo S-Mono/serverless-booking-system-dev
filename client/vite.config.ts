@@ -24,8 +24,8 @@ export default defineConfig({
         manualChunks(id) {
          // 1. firebase 関連を分離
           if (id.includes('firebase')) return 'vendor-firebase';
-          // 2. xlsx 関連を分離（これが非常に大きい）
-          if (id.includes('xlsx')) return 'vendor-xlsx';
+          // 2. Excel 出力関連を分離（これが非常に大きい）
+          if (id.includes('exceljs')) return 'vendor-exceljs';
           // 3. その他 node_modules のうち、vue などを分離
           if (id.includes('node_modules')) {
             if (id.includes('vue') || id.includes('pinia')) return 'vendor-core';

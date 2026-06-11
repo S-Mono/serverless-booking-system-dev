@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 // プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
 import { getToken, onMessage } from 'firebase/messaging'
+import ExcelJS from 'exceljs'
 import {
   getBusinessHoursForDate,
   getDefaultShopConfig,
@@ -101,6 +102,19 @@ const validationErrors = ref({
   customer_name: '',
   customer_phone: ''
 })
+
+const downloadWorkbook = async (workbook: ExcelJS.Workbook, fileName: string) => {
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 // 選択済みメニューの管理
 const selectedMenus = computed(() => {
@@ -1362,7 +1376,6 @@ onUnmounted(() => {
 // Excel出力関数
 const exportReservationsToExcel = async () => {
   try {
-    const { utils, writeFile } = await import('xlsx-js-style')
     // 左パネルと同じ表示期間の予約を取得（selectedDateから30日分）
     const startDate = new Date(selectedDate.value)
     startDate.setHours(0, 0, 0, 0)
@@ -1543,39 +1556,32 @@ const exportReservationsToExcel = async () => {
       })
     })
 
-    // ワークブックとワークシートを作成
-    const worksheet = utils.aoa_to_sheet(worksheetData)
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('予約一覧')
+    worksheet.addRows(worksheetData)
+
+    // 列幅の設定（時間枠の数に応じて）
+    const colWidths = [{ width: 12 }] // 最初の列（項目名）
+    timeSlots.forEach(() => {
+      colWidths.push({ width: 15 }) // 各時間枠の列
+    })
+    worksheet.columns = colWidths
 
     // セルスタイルを適用
     cellStyles.forEach(({ row, col, style }) => {
-      const cellAddress = utils.encode_cell({ r: row, c: col })
-      if (!worksheet[cellAddress]) {
-        worksheet[cellAddress] = { t: 's', v: '' }
-      }
-      // xlsx-js-style用のスタイル形式
-      worksheet[cellAddress].s = {
-        fill: {
-          patternType: 'solid',
-          fgColor: { rgb: style.fill.fgColor.rgb }
-        }
+      const cell = worksheet.getCell(row + 1, col + 1)
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: `FF${style.fill.fgColor.rgb}` }
       }
     })
-
-    // 列幅の設定（時間枠の数に応じて）
-    const colWidths = [{ wch: 12 }] // 最初の列（項目名）
-    timeSlots.forEach(() => {
-      colWidths.push({ wch: 15 }) // 各時間枠の列
-    })
-    worksheet['!cols'] = colWidths
-
-    const workbook = utils.book_new()
-    utils.book_append_sheet(workbook, worksheet, '予約一覧')
 
     // ファイル名を生成（表示期間の開始日）
     const fileName = `予約一覧_${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}.xlsx`
 
     // ファイルをダウンロード
-    writeFile(workbook, fileName)
+    await downloadWorkbook(workbook, fileName)
 
     dialog.alert(`${reservations.length}件の予約をExcelに出力しました`, '出力完了')
   } catch (error) {
