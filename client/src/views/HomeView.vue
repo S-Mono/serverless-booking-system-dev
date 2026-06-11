@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, doc, limit } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
 import { reportLiffError } from '../lib/errorReporter'
@@ -18,6 +19,7 @@ import {
 const dialog = useDialogStore()
 const router = useRouter()
 const lineAuthStore = useLineAuthStore()
+const functions = getFunctions(undefined, 'asia-northeast1')
 
 // 🟢 修正1: price_with_tax を定義に追加
 interface Menu {
@@ -367,6 +369,29 @@ const submitReservation = async () => {
       is_read: false,
       created_at: Timestamp.now()
     })
+
+    // LINEミニアプリのサービスメッセージ（Temporary reservation）送信
+    // 失敗しても予約登録は成功扱いにする。
+    try {
+      const liff = (await import('@line/liff')).default
+      const liffAccessToken = liff.getAccessToken()
+      if (lineAuthStore.isLineApp && liffAccessToken) {
+        const sendTemporaryReservationServiceMessage = httpsCallable(
+          functions,
+          'sendTemporaryReservationServiceMessage'
+        )
+        const buttonUrl = `${window.location.origin}/mypage?reservationId=${resRef.id}`
+        await sendTemporaryReservationServiceMessage({
+          reservationId: resRef.id,
+          liffAccessToken,
+          buttonUrl
+        })
+      } else {
+        console.info('Skip service message: not in LINE app or no LIFF access token')
+      }
+    } catch (serviceMessageError) {
+      console.warn('Temporary reservation service message failed:', serviceMessageError)
+    }
 
     await dialog.alert('予約リクエストを送信しました！\nお店からの確定をお待ちください。')
 

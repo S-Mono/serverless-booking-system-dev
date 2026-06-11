@@ -50,6 +50,93 @@ const getLineChannelAccessToken = async (): Promise<string | null> => {
   }
 };
 
+type LineServiceNotificationTokenResponse = {
+  notificationToken?: string;
+  expiresIn?: number;
+  remainingCount?: number;
+  sessionId?: string;
+};
+
+const issueLineServiceNotificationToken = async (
+  liffAccessToken: string,
+  channelAccessToken: string
+): Promise<LineServiceNotificationTokenResponse> => {
+  const response = await axios.post(
+    "https://api.line.me/message/v3/notifier/token",
+    {
+      liffAccessToken,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${channelAccessToken}`,
+      },
+    }
+  );
+
+  return response.data as LineServiceNotificationTokenResponse;
+};
+
+type SendLineServiceMessageInput = {
+  templateName: string;
+  notificationToken: string;
+  params: Record<string, string>;
+};
+
+const sendLineServiceMessage = async (
+  input: SendLineServiceMessageInput,
+  channelAccessToken: string
+): Promise<LineServiceNotificationTokenResponse> => {
+  const response = await axios.post(
+    "https://api.line.me/message/v3/notifier/send?target=service",
+    input,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${channelAccessToken}`,
+      },
+    }
+  );
+
+  return response.data as LineServiceNotificationTokenResponse;
+};
+
+const saveReservationServiceMessageSession = async (params: {
+  reservationId: string;
+  customerId: string;
+  templateName: string;
+  notificationToken?: string;
+  remainingCount?: number;
+  expiresIn?: number;
+  sessionId?: string;
+}) => {
+  const now = admin.firestore.Timestamp.now();
+  const expiresAt = typeof params.expiresIn === "number" ?
+    admin.firestore.Timestamp.fromMillis(Date.now() + params.expiresIn * 1000) :
+    null;
+
+  await admin
+    .firestore()
+    .collection("reservation_service_message_sessions")
+    .doc(params.reservationId)
+    .set(
+      {
+        reservation_id: params.reservationId,
+        customer_id: params.customerId,
+        notification_token: params.notificationToken || null,
+        remaining_count: typeof params.remainingCount === "number" ?
+          params.remainingCount :
+          null,
+        expires_at: expiresAt,
+        session_id: params.sessionId || null,
+        last_template_name: params.templateName,
+        updated_at: now,
+        created_at: now,
+      },
+      {merge: true}
+    );
+};
+
 // メール送信用のトランスポーター設定
 const createTransporter = () => {
   const config = {
@@ -114,6 +201,141 @@ const sendLineMessageToCustomer = async (
     // 顧客へのLINE送信失敗は致命的エラーとせず続行
   }
 };
+
+/**
+ * 仮予約作成時にLINEミニアプリのサービスメッセージを送信する。
+ * クライアントからLIFFアクセストークンを受け取り、
+ * サービス通知トークンを発行してテンプレート送信を行う。
+ */
+export const sendTemporaryReservationServiceMessage = onCall(
+  {
+    region: "asia-northeast1",
+  },
+  async (request) => {
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError("unauthenticated", "認証が必要です");
+    }
+
+    const reservationId = (request.data?.reservationId || "").trim();
+    const liffAccessToken = (request.data?.liffAccessToken || "").trim();
+    const buttonUrl = (request.data?.buttonUrl || "").trim();
+
+    if (!reservationId) {
+      throw new HttpsError("invalid-argument", "reservationId is required");
+    }
+    if (!liffAccessToken) {
+      throw new HttpsError("invalid-argument", "liffAccessToken is required");
+    }
+    if (!buttonUrl) {
+      throw new HttpsError("invalid-argument", "buttonUrl is required");
+    }
+    if (!/^https:\/\//.test(buttonUrl)) {
+      throw new HttpsError("invalid-argument", "buttonUrl must be https URL");
+    }
+
+    const reservationDoc = await admin
+      .firestore()
+      .collection("reservations")
+      .doc(reservationId)
+      .get();
+
+    if (!reservationDoc.exists) {
+      throw new HttpsError("not-found", "Reservation not found");
+    }
+
+    const reservation = reservationDoc.data();
+    if (!reservation || reservation.customer_id !== userId) {
+      throw new HttpsError("permission-denied", "Reservation owner mismatch");
+    }
+
+    if (reservation.source !== "web" || reservation.status !== "pending") {
+      logger.info("Skip temporary service message due to reservation state", {
+        reservationId,
+        source: reservation.source,
+        status: reservation.status,
+      });
+      return {success: false, skipped: true, reason: "reservation-state"};
+    }
+
+    const templateName = process.env.LINE_SERVICE_TEMPLATE_TEMPORARY_RESERVATION ||
+      "tempreserv_s_ja";
+
+    try {
+      const channelAccessToken = await getLineChannelAccessToken();
+      if (!channelAccessToken) {
+        throw new HttpsError(
+          "failed-precondition",
+          "LINE channel access token is unavailable"
+        );
+      }
+
+      const issued = await issueLineServiceNotificationToken(
+        liffAccessToken,
+        channelAccessToken
+      );
+
+      if (!issued.notificationToken) {
+        throw new HttpsError(
+          "internal",
+          "Failed to issue LINE service notification token"
+        );
+      }
+
+      const sent = await sendLineServiceMessage(
+        {
+          templateName,
+          notificationToken: issued.notificationToken,
+          params: {
+            btn1_url: buttonUrl,
+          },
+        },
+        channelAccessToken
+      );
+
+      const latestToken = sent.notificationToken || issued.notificationToken;
+      await saveReservationServiceMessageSession({
+        reservationId,
+        customerId: userId,
+        templateName,
+        notificationToken: latestToken,
+        remainingCount: sent.remainingCount,
+        expiresIn: sent.expiresIn,
+        sessionId: sent.sessionId,
+      });
+
+      logger.info("Temporary reservation service message sent", {
+        reservationId,
+        customerId: userId,
+        templateName,
+        remainingCount: sent.remainingCount,
+      });
+
+      return {
+        success: true,
+        reservationId,
+        templateName,
+        remainingCount: sent.remainingCount,
+      };
+    } catch (error: unknown) {
+      const errorObj = error as {
+        message?: string;
+        response?: {status?: number; data?: unknown};
+      };
+      logger.error("Failed to send temporary reservation service message", {
+        reservationId,
+        customerId: userId,
+        error: errorObj.message,
+        status: errorObj.response?.status,
+        data: errorObj.response?.data,
+      });
+      throw new HttpsError(
+        "internal",
+        "Failed to send temporary reservation service message"
+      );
+    }
+  }
+);
 
 /**
  * LINE Messaging API を使って admin_line_users コレクションの全ユーザーに
