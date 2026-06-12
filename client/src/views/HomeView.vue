@@ -385,27 +385,6 @@ const submitReservation = async () => {
 
     await dialog.alert('予約リクエストを送信しました！\nお店からの確定をお待ちください。')
 
-    // LINEアプリ内の場合、控えメッセージを自分のトーク画面に送信
-    try {
-      const liff = (await import('@line/liff')).default
-      if (liff.isInClient()) {
-        const sendLine = await dialog.open(
-          'LINEのトーク画面に予約控えを送信しますか？',
-          { title: '控えを送る', confirmText: '送信する', cancelText: 'スキップ' }
-        )
-        if (sendLine) {
-          const staffName = availableStaffs.value.find(s => s.id === selectedStaffId.value)?.name || '担当者'
-          await liff.sendMessages([{
-            type: 'text',
-            text: `【予約控え】\n日時: ${dateStr}\n担当: ${staffName}\nメニュー: ${selectedMenus.value.map(m => m.title).join(', ')}\n合計: ¥${totalAmount.value.toLocaleString()}`
-          }])
-        }
-      }
-    } catch (e) {
-      // LINE控え送信失敗はサイレントに無視（予約自体は完了済み）
-      console.warn('LINE控え送信スキップ:', e)
-    }
-
     showModal.value = false;
     reservationDate.value = '';
     selectedTime.value = '';

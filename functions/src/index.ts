@@ -1,5 +1,10 @@
-import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {
+  onDocumentCreated,
+  onDocumentUpdated,
+  onDocumentDeleted,
+} from "firebase-functions/v2/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
@@ -1177,6 +1182,208 @@ export const resetPasswordWithToken = onCall(
         token,
       });
       throw new HttpsError("internal", "Failed to reset password");
+    }
+  }
+);
+
+// --------------------------------------------------------------------------
+// 以降は後続のサービスメッセージ送信用処理
+// --------------------------------------------------------------------------
+
+const sendSubsequentServiceMessage = async (
+  reservationId: string,
+  customerId: string,
+  templateName: string,
+  params: Record<string, string>
+) => {
+  try {
+    const db = admin.firestore();
+    const sessionDoc = await db
+      .collection("reservation_service_message_sessions")
+      .doc(reservationId)
+      .get();
+
+    if (!sessionDoc.exists) {
+      logger.info("No service message session found", {reservationId});
+      return;
+    }
+
+    const sessionData = sessionDoc.data();
+    if (!sessionData?.notification_token) {
+      logger.info("No notification token in session", {reservationId});
+      return;
+    }
+
+    const channelAccessToken = await getLineChannelAccessToken();
+    if (!channelAccessToken) {
+      logger.error(
+        "No channel access token available for subsequent service message"
+      );
+      return;
+    }
+
+    const fallbackBaseUrl =
+      process.env.APP_URL || "https://serverless-booking-system-dev.vercel.app";
+    // paramsにbtn1_urlが必須の場合は補完する
+    if (!params.btn1_url) {
+      params.btn1_url = `${fallbackBaseUrl.replace(/\/$/, "")}/mypage`;
+    }
+
+    const sent = await sendLineServiceMessage(
+      {
+        templateName,
+        notificationToken: sessionData.notification_token,
+        params,
+      },
+      channelAccessToken
+    );
+
+    await saveReservationServiceMessageSession({
+      reservationId,
+      customerId,
+      templateName,
+      notificationToken: sent.notificationToken ||
+        sessionData.notification_token,
+      remainingCount: sent.remainingCount,
+      expiresIn: sent.expiresIn,
+      sessionId: sent.sessionId,
+    });
+
+    logger.info("Subsequent service message sent successfully", {
+      reservationId,
+      templateName,
+    });
+  } catch (error: unknown) {
+    const errorObj = error as {
+      message?: string;
+      response?: { status?: number; data?: unknown };
+    };
+    logger.error("Failed to send subsequent service message", {
+      reservationId,
+      templateName,
+      error: errorObj.message,
+      status: errorObj.response?.status,
+      data: errorObj.response?.data,
+    });
+  }
+};
+
+// 予約のステータス更新を監視（予約確定、店舗側キャンセル）
+export const onReservationUpdated = onDocumentUpdated(
+  {
+    document: "reservations/{reservationId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+
+    if (!before || !after) return;
+
+    const reservationId = event.params.reservationId;
+    const customerId = after.customer_id;
+    if (!customerId) return;
+
+    // pending -> confirmed (予約確定)
+    if (before.status === "pending" && after.status === "confirmed") {
+      logger.info("Reservation confirmed, sending service message", {
+        reservationId,
+      });
+      await sendSubsequentServiceMessage(
+        reservationId,
+        customerId,
+        process.env.LINE_SERVICE_TEMPLATE_BOOKING_CONFIRMED || "reserv_s_ja",
+        {}
+      );
+    }
+
+    // anything -> cancelled (店舗側によるキャンセル)
+    if (before.status !== "cancelled" && after.status === "cancelled") {
+      logger.info("Reservation cancelled by shop, sending service message", {
+        reservationId,
+      });
+      await sendSubsequentServiceMessage(
+        reservationId,
+        customerId,
+        process.env.LINE_SERVICE_TEMPLATE_AUTO_CANCEL || "cancel_s_ja",
+        {}
+      );
+    }
+  }
+);
+
+// 予約が削除された場合（ユーザーによるキャンセル）
+export const onReservationDeleted = onDocumentDeleted(
+  {
+    document: "reservations/{reservationId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const deleted = event.data?.data();
+    if (!deleted) return;
+
+    const reservationId = event.params.reservationId;
+    const customerId = deleted.customer_id;
+    if (!customerId) return;
+
+    logger.info(
+      "Reservation deleted (user cancelled), sending service message",
+      {reservationId}
+    );
+    await sendSubsequentServiceMessage(
+      reservationId,
+      customerId,
+      process.env.LINE_SERVICE_TEMPLATE_USER_CANCEL || "cancel_s_ja",
+      {}
+    );
+  }
+);
+
+// リマインダー送信処理（毎朝8時に翌日の予約を対象）
+export const sendBookingReminders = onSchedule(
+  {
+    schedule: "0 8 * * *",
+    timeZone: "Asia/Tokyo",
+    region: "asia-northeast1",
+  },
+  async () => {
+    const db = admin.firestore();
+    const now = new Date();
+    // 翌日の開始・終了
+    const tomorrowStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0, 0, 0
+    );
+    const tomorrowEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      23, 59, 59
+    );
+
+    const startTs = admin.firestore.Timestamp.fromDate(tomorrowStart);
+    const endTs = admin.firestore.Timestamp.fromDate(tomorrowEnd);
+
+    const snapshot = await db.collection("reservations")
+      .where("start_at", ">=", startTs)
+      .where("start_at", "<=", endTs)
+      .where("status", "==", "confirmed")
+      .get();
+
+    logger.info(`Sending reminders for ${snapshot.size} reservations`);
+
+    for (const doc of snapshot.docs) {
+      const reservation = doc.data();
+      if (!reservation.customer_id) continue;
+
+      await sendSubsequentServiceMessage(
+        doc.id,
+        reservation.customer_id,
+        process.env.LINE_SERVICE_TEMPLATE_REMINDER || "remind_s_ja",
+        {}
+      );
     }
   }
 );
