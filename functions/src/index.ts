@@ -567,6 +567,104 @@ export const onReservationCreated = onDocumentCreated(
         await sendLineMessageToCustomer(lineUserId, confirmText, snap.id);
       }
     }
+
+    // ── LINEミニアプリのサービスメッセージ送信（トリガー経由） ───────────
+    // callableを直接叩くと環境によってOPTIONSプリフライトが403になるため、
+    // 予約作成トリガー内で処理する。
+    const liffAccessToken =
+      typeof reservation.liff_access_token === "string" ?
+        reservation.liff_access_token.trim() :
+        "";
+    const buttonUrlCandidate =
+      typeof reservation.service_message_button_url === "string" ?
+        reservation.service_message_button_url.trim() :
+        "";
+    const fallbackBaseUrl = process.env.APP_URL ||
+      "https://serverless-booking-system-dev.vercel.app";
+    const buttonUrl = /^https:\/\//.test(buttonUrlCandidate) ?
+      buttonUrlCandidate :
+      `${fallbackBaseUrl.replace(/\/$/, "")}/mypage`;
+
+    if (
+      reservation.status === "pending" &&
+      customerId &&
+      liffAccessToken
+    ) {
+      const templateName =
+        process.env.LINE_SERVICE_TEMPLATE_TEMPORARY_RESERVATION ||
+        "tempreserv_s_ja";
+
+      try {
+        const channelAccessToken = await getLineChannelAccessToken();
+        if (!channelAccessToken) {
+          throw new Error("LINE channel access token is unavailable");
+        }
+
+        const issued = await issueLineServiceNotificationToken(
+          liffAccessToken,
+          channelAccessToken
+        );
+
+        if (!issued.notificationToken) {
+          throw new Error("Failed to issue LINE service notification token");
+        }
+
+        const sent = await sendLineServiceMessage(
+          {
+            templateName,
+            notificationToken: issued.notificationToken,
+            params: {
+              btn1_url: buttonUrl,
+            },
+          },
+          channelAccessToken
+        );
+
+        const latestToken = sent.notificationToken || issued.notificationToken;
+        await saveReservationServiceMessageSession({
+          reservationId: snap.id,
+          customerId,
+          templateName,
+          notificationToken: latestToken,
+          remainingCount: sent.remainingCount,
+          expiresIn: sent.expiresIn,
+          sessionId: sent.sessionId,
+        });
+
+        // 一時トークンは送信後に削除
+        await snap.ref.update({
+          liff_access_token: admin.firestore.FieldValue.delete(),
+          service_message_button_url: admin.firestore.FieldValue.delete(),
+          service_message_sent_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        logger.info("Temporary reservation service message sent in trigger", {
+          reservationId: snap.id,
+          customerId,
+          templateName,
+          remainingCount: sent.remainingCount,
+        });
+      } catch (serviceError: unknown) {
+        const errorObj = serviceError as {
+          message?: string;
+          response?: {status?: number; data?: unknown};
+        };
+        logger.error("Failed temporary service message in trigger", {
+          reservationId: snap.id,
+          customerId,
+          error: errorObj.message,
+          status: errorObj.response?.status,
+          data: errorObj.response?.data,
+        });
+      }
+    } else {
+      logger.info("Skip trigger service message", {
+        reservationId: snap.id,
+        hasCustomerId: !!customerId,
+        hasLiffAccessToken: !!liffAccessToken,
+        status: reservation.status,
+      });
+    }
   }
 );
 

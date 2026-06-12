@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, doc, limit } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
-import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
 import { reportLiffError } from '../lib/errorReporter'
@@ -19,7 +18,6 @@ import {
 const dialog = useDialogStore()
 const router = useRouter()
 const lineAuthStore = useLineAuthStore()
-const functions = getFunctions(undefined, 'asia-northeast1')
 
 // 🟢 修正1: price_with_tax を定義に追加
 interface Menu {
@@ -341,12 +339,25 @@ const submitReservation = async () => {
     snapshot.forEach(doc => { const data = doc.data(); if (data.status !== 'cancelled' && data.staff_id === selectedStaffId.value) isBusy = true })
     if (isBusy) throw new Error('申し訳ありません。指定された日時は担当者が満席です。')
 
+    // LINEミニアプリ内なら、Cloud Functionsトリガー用にLIFFアクセストークンを一時的に予約ドキュメントへ保存する
+    let liffAccessTokenForTrigger = ''
+    if (lineAuthStore.isLineApp) {
+      try {
+        const liff = (await import('@line/liff')).default
+        liffAccessTokenForTrigger = liff.getAccessToken() || ''
+      } catch (e) {
+        console.warn('Failed to get LIFF access token for trigger path:', e)
+      }
+    }
+
     // 🟢 修正4: 保存時も price_with_tax を使う
     const resRef = await addDoc(collection(db, 'reservations'), {
       customer_id: customerProfile.value?.id || uid, customer_name: customerProfile.value?.name_kana || 'WEB予約ゲスト',
       customer_phone: customerProfile.value?.phone_number || '', staff_id: selectedStaffId.value, start_at: startTimestamp, end_at: endTimestamp,
       menu_items: selectedMenus.value.map(m => ({ title: m.title, price: m.price_with_tax, duration: m.duration_min })),
-      total_price: totalAmount.value, total_duration_min: totalDuration.value, source: 'web', status: 'pending', note: customerNote.value || '', created_at: Timestamp.now()
+      total_price: totalAmount.value, total_duration_min: totalDuration.value, source: 'web', status: 'pending', note: customerNote.value || '', created_at: Timestamp.now(),
+      liff_access_token: liffAccessTokenForTrigger || null,
+      service_message_button_url: `${window.location.origin}/mypage`
     })
 
     // 🟢 追加: LINE Notify 送信（コメントアウト）
@@ -370,31 +381,7 @@ const submitReservation = async () => {
       created_at: Timestamp.now()
     })
 
-    // LINEミニアプリのサービスメッセージ（Temporary reservation）送信
-    // 失敗しても予約登録は成功扱いにする。
-    try {
-      const liff = (await import('@line/liff')).default
-      const liffAccessToken = liff.getAccessToken()
-      const firebaseUser = auth.currentUser
-      const idToken = firebaseUser ? await firebaseUser.getIdToken().catch(() => '') : ''
-
-      if (lineAuthStore.isLineApp && liffAccessToken && idToken) {
-        const sendTemporaryReservationServiceMessage = httpsCallable(
-          functions,
-          'sendTemporaryReservationServiceMessage'
-        )
-        const buttonUrl = `${window.location.origin}/mypage?reservationId=${resRef.id}`
-        await sendTemporaryReservationServiceMessage({
-          reservationId: resRef.id,
-          liffAccessToken,
-          buttonUrl
-        })
-      } else {
-        console.info('Skip service message: LINE app/auth token/liff access token not ready')
-      }
-    } catch (serviceMessageError) {
-      console.warn('Temporary reservation service message failed:', serviceMessageError)
-    }
+    // サービスメッセージ送信は onReservationCreated トリガーで実行（callable直呼びは403対策のため停止）
 
     await dialog.alert('予約リクエストを送信しました！\nお店からの確定をお待ちください。')
 
