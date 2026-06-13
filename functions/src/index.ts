@@ -46,7 +46,10 @@ const getLineChannelAccessToken = async (): Promise<string | null> => {
     logger.info("Channel access token obtained successfully");
     return response.data.access_token;
   } catch (error: unknown) {
-    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    const errorObj = error as {
+      message?: string;
+      response?: { data?: unknown };
+    };
     logger.error("Failed to get channel access token", {
       error: errorObj.message,
       data: errorObj.response?.data,
@@ -174,7 +177,7 @@ const sendLineMessageToCustomer = async (
   if (!messagingToken) {
     logger.warn(
       "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN not configured," +
-        " skipping customer push",
+      " skipping customer push",
       {reservationId}
     );
     return;
@@ -196,7 +199,10 @@ const sendLineMessageToCustomer = async (
     );
     logger.info("LINE push sent to customer", {reservationId, lineUserId});
   } catch (error: unknown) {
-    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    const errorObj = error as {
+      message?: string;
+      response?: { data?: unknown };
+    };
     logger.error("Failed to send LINE push to customer", {
       reservationId,
       lineUserId,
@@ -327,7 +333,7 @@ export const sendTemporaryReservationServiceMessage = onCall(
     } catch (error: unknown) {
       const errorObj = error as {
         message?: string;
-        response?: {status?: number; data?: unknown};
+        response?: { status?: number; data?: unknown };
       };
       logger.error("Failed to send temporary reservation service message", {
         reservationId,
@@ -399,7 +405,10 @@ const sendLineMessageToAdmins = async (
       adminCount: lineUserIds.length,
     });
   } catch (error: unknown) {
-    const errorObj = error as {message?: string; response?: {data?: unknown}};
+    const errorObj = error as {
+      message?: string;
+      response?: { data?: unknown };
+    };
     logger.error("Failed to send LINE multicast", {
       reservationId,
       error: errorObj.message,
@@ -652,7 +661,7 @@ export const onReservationCreated = onDocumentCreated(
       } catch (serviceError: unknown) {
         const errorObj = serviceError as {
           message?: string;
-          response?: {status?: number; data?: unknown};
+          response?: { status?: number; data?: unknown };
         };
         logger.error("Failed temporary service message in trigger", {
           reservationId: snap.id,
@@ -882,7 +891,7 @@ export const deleteUserAccount = onCall(
       } catch (lineError: unknown) {
         const errorObj = lineError as {
           message?: string;
-          response?: {status?: number; data?: unknown};
+          response?: { status?: number; data?: unknown };
         };
         logger.error("Failed to revoke LINE authorization", {
           userId,
@@ -950,7 +959,7 @@ export const deleteUserAccount = onCall(
 
       return {success: true, message: "退会処理が完了しました"};
     } catch (error: unknown) {
-      const errorObj = error as {message?: string; code?: string};
+      const errorObj = error as { message?: string; code?: string };
       logger.error("Error deleting user account", {
         userId,
         error: errorObj.message,
@@ -1055,7 +1064,7 @@ export const onPasswordResetRequest = onDocumentCreated(
         requestId: snap.id,
       });
     } catch (error: unknown) {
-      const errorObj = error as {message?: string; stack?: string};
+      const errorObj = error as { message?: string; stack?: string };
       logger.error("Failed to send password reset email", {
         error: errorObj.message,
         stack: errorObj.stack,
@@ -1114,7 +1123,7 @@ export const adminUpdatePassword = onCall(
 
       return {success: true};
     } catch (error: unknown) {
-      const errorObj = error as {message?: string};
+      const errorObj = error as { message?: string };
       logger.error("Failed to update user password", {
         error: errorObj.message,
         targetUid: uid,
@@ -1200,7 +1209,7 @@ export const resetPasswordWithToken = onCall(
         throw error;
       }
 
-      const errorObj = error as {message?: string};
+      const errorObj = error as { message?: string };
       logger.error("Password reset failed", {
         error: errorObj.message,
         token,
@@ -1319,7 +1328,9 @@ export const onReservationUpdated = onDocumentUpdated(
       await sendSubsequentServiceMessage(
         reservationId,
         customerId,
-        process.env.LINE_SERVICE_TEMPLATE_BOOKING_CONFIRMED || "book_request_s_b_ja", { number: reservationId.slice(0, 8).toUpperCase() }
+        process.env.LINE_SERVICE_TEMPLATE_BOOKING_CONFIRMED ||
+          "book_request_s_b_ja",
+        {number: reservationId.slice(0, 8).toUpperCase()}
       );
     }
 
@@ -1331,7 +1342,8 @@ export const onReservationUpdated = onDocumentUpdated(
       await sendSubsequentServiceMessage(
         reservationId,
         customerId,
-        process.env.LINE_SERVICE_TEMPLATE_AUTO_CANCEL || "auto_cancel_s_ja", { number: reservationId.slice(0, 8).toUpperCase() }
+        process.env.LINE_SERVICE_TEMPLATE_AUTO_CANCEL || "auto_cancel_s_ja",
+        {number: reservationId.slice(0, 8).toUpperCase()}
       );
     }
   }
@@ -1358,7 +1370,8 @@ export const onReservationDeleted = onDocumentDeleted(
     await sendSubsequentServiceMessage(
       reservationId,
       customerId,
-      process.env.LINE_SERVICE_TEMPLATE_USER_CANCEL || "user_cancle_s_ja", { number: reservationId.slice(0, 8).toUpperCase() }
+      process.env.LINE_SERVICE_TEMPLATE_USER_CANCEL || "user_cancle_s_ja",
+      {number: reservationId.slice(0, 8).toUpperCase()}
     );
   }
 );
@@ -1405,7 +1418,8 @@ export const sendBookingReminders = onSchedule(
       await sendSubsequentServiceMessage(
         doc.id,
         reservation.customer_id,
-        process.env.LINE_SERVICE_TEMPLATE_REMINDER || "remind_s_b_ja", { number: doc.id.slice(0, 8).toUpperCase(), daytime: "1日" }
+        process.env.LINE_SERVICE_TEMPLATE_REMINDER || "remind_s_b_ja",
+        {number: doc.id.slice(0, 8).toUpperCase(), daytime: "1日"}
       );
     }
   }
