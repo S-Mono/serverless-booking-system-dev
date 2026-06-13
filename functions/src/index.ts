@@ -1248,10 +1248,13 @@ const sendSubsequentServiceMessage = async (
 
     const fallbackBaseUrl =
       process.env.APP_URL || "https://serverless-booking-system-dev.vercel.app";
-    // paramsにbtn1_urlが必須の場合は補完する
-    if (!params.btn1_url) {
-      params.btn1_url = `${fallbackBaseUrl.replace(/\/$/, "")}/mypage`;
-    }
+    const defaultUrl = `${fallbackBaseUrl.replace(/\/$/, "")}/mypage`;
+
+    // 必須パラメータの補完
+    if (!params.btn1_url) params.btn1_url = defaultUrl;
+    if (!params.btn2_url) params.btn2_url = defaultUrl;
+    if (!params.btn3_url) params.btn3_url = defaultUrl;
+    if (!params.btn4_url) params.btn4_url = defaultUrl;
 
     const sent = await sendLineServiceMessage(
       {
@@ -1316,8 +1319,7 @@ export const onReservationUpdated = onDocumentUpdated(
       await sendSubsequentServiceMessage(
         reservationId,
         customerId,
-        process.env.LINE_SERVICE_TEMPLATE_BOOKING_CONFIRMED || "reserv_s_ja",
-        {}
+        process.env.LINE_SERVICE_TEMPLATE_BOOKING_CONFIRMED || "book_request_s_b_ja", { number: reservationId.slice(0, 8).toUpperCase() }
       );
     }
 
@@ -1329,8 +1331,7 @@ export const onReservationUpdated = onDocumentUpdated(
       await sendSubsequentServiceMessage(
         reservationId,
         customerId,
-        process.env.LINE_SERVICE_TEMPLATE_AUTO_CANCEL || "cancel_s_ja",
-        {}
+        process.env.LINE_SERVICE_TEMPLATE_AUTO_CANCEL || "auto_cancel_s_ja", { number: reservationId.slice(0, 8).toUpperCase() }
       );
     }
   }
@@ -1357,8 +1358,7 @@ export const onReservationDeleted = onDocumentDeleted(
     await sendSubsequentServiceMessage(
       reservationId,
       customerId,
-      process.env.LINE_SERVICE_TEMPLATE_USER_CANCEL || "cancel_s_ja",
-      {}
+      process.env.LINE_SERVICE_TEMPLATE_USER_CANCEL || "user_cancle_s_ja", { number: reservationId.slice(0, 8).toUpperCase() }
     );
   }
 );
@@ -1405,9 +1405,9 @@ export const sendBookingReminders = onSchedule(
       await sendSubsequentServiceMessage(
         doc.id,
         reservation.customer_id,
-        process.env.LINE_SERVICE_TEMPLATE_REMINDER || "remind_s_ja",
-        {}
+        process.env.LINE_SERVICE_TEMPLATE_REMINDER || "remind_s_b_ja", { number: doc.id.slice(0, 8).toUpperCase(), daytime: "1日" }
       );
     }
   }
 );
+
