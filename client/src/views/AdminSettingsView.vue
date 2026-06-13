@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const isDev = import.meta.env.DEV;
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
@@ -73,7 +74,8 @@ const saveConfig = async () => {
       closed_dates: config.value.closed_dates,
       business_hours: businessHours,
       weekday_business_hours: weekdayBusinessHours,
-      tax_rate: Number(config.value.tax_rate)
+      tax_rate: Number(config.value.tax_rate),
+      auto_confirm_pending_reservations: !!config.value.auto_confirm_pending_reservations
     })
 
     config.value = normalizeShopConfig({
@@ -173,6 +175,13 @@ onMounted(() => { fetchData() })
                 <div class="input-group">
                   <label>消費税率 (%)</label>
                   <input type="number" v-model="config.tax_rate" min="0" max="100" />
+                </div>
+                <div class="input-group" v-if="isDev">
+                  <label>開発用：仮予約の自動確定 (15秒後)</label>
+                  <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" v-model="config.auto_confirm_pending_reservations" style="width: 20px; height: 20px;" />
+                    <span>有効にする</span>
+                  </label>
                 </div>
               </div>
               <div class="action-row">

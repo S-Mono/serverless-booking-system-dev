@@ -16,6 +16,7 @@ export interface ShopConfigData {
   weekday_business_hours: WeekdayBusinessHour[]
   time_slot_interval: number
   tax_rate: number
+  auto_confirm_pending_reservations?: boolean
 }
 
 export const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -130,7 +131,8 @@ export const normalizeShopConfig = (value: unknown): ShopConfigData => {
     time_slot_interval: typeof source.time_slot_interval === 'number' && source.time_slot_interval > 0
       ? source.time_slot_interval
       : DEFAULT_TIME_SLOT_INTERVAL,
-    tax_rate: typeof source.tax_rate === 'number' ? source.tax_rate : DEFAULT_TAX_RATE
+    tax_rate: typeof source.tax_rate === 'number' ? source.tax_rate : DEFAULT_TAX_RATE,
+    auto_confirm_pending_reservations: typeof source.auto_confirm_pending_reservations === 'boolean' ? source.auto_confirm_pending_reservations : false
   }
 }
 

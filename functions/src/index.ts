@@ -670,6 +670,30 @@ export const onReservationCreated = onDocumentCreated(
         status: reservation.status,
       });
     }
+
+    if (reservation.status === "pending") {
+      try {
+        const configSnap = await admin.firestore()
+          .collection("shop_config")
+          .doc("default_config")
+          .get();
+        const configData = configSnap.data();
+        if (configData?.auto_confirm_pending_reservations) {
+          logger.info("Waiting 15s to auto-confirm reservation " + snap.id);
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+          const currentSnap = await snap.ref.get();
+          if (currentSnap.exists && currentSnap.data()?.status === "pending") {
+            await snap.ref.update({
+              status: "confirmed",
+              updated_at: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            logger.info("Auto-confirmed reservation " + snap.id);
+          }
+        }
+      } catch (error) {
+        logger.error("Error in auto_confirm_pending_reservations:", error);
+      }
+    }
   }
 );
 
