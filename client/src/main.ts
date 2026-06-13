@@ -5,9 +5,51 @@ import App from './App.vue'
 import router from './router'
 // import { reportError } from './lib/errorReporter'
 
+const CHUNK_RELOAD_GUARD_KEY = 'chunk_reload_guard'
+
+const isChunkLoadError = (error: unknown): boolean => {
+  const message =
+    typeof error === 'string' ?
+      error :
+      (error as { message?: string } | null)?.message || ''
+
+  return [
+    'Failed to fetch dynamically imported module',
+    'Importing a module script failed',
+    'Loading chunk',
+    'dynamically imported module'
+  ].some((keyword) => message.includes(keyword))
+}
+
+const reloadForChunkError = (): boolean => {
+  try {
+    if (sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY) === '1') {
+      return false
+    }
+    sessionStorage.setItem(CHUNK_RELOAD_GUARD_KEY, '1')
+  } catch {
+    // sessionStorage が使えない環境ではガードなしでリロード
+  }
+
+  window.location.reload()
+  return true
+}
+
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  reloadForChunkError()
+})
+
 // グローバルAbortErrorハンドラー（vConsoleより先に設定）
 window.addEventListener('unhandledrejection', async(event) => {
   const reason = event.reason
+
+  if (isChunkLoadError(reason)) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    reloadForChunkError()
+    return false
+  }
   
   // AbortErrorを多様な方法で検出
   const isAbortError = 
@@ -57,7 +99,19 @@ window.addEventListener('error', async(event) => {
 
 const app = createApp(App)
 
+router.onError((error) => {
+  if (isChunkLoadError(error)) {
+    reloadForChunkError()
+  }
+})
+
 app.use(createPinia())
 app.use(router)
 
 app.mount('#app')
+
+try {
+  sessionStorage.removeItem(CHUNK_RELOAD_GUARD_KEY)
+} catch {
+  // noop
+}
