@@ -93,7 +93,7 @@ const appVersion = __APP_VERSION__
     .footer-content {
         flex-direction: column;
         text-align: center;
-        gap: 0.15rem;
+        gap: 0.25rem;
     }
 
     .footer-copyright {
