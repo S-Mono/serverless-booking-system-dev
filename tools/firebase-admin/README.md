@@ -80,3 +80,10 @@ npm run set-admin -- --email admin@example.com --admin true
 # or (directly, from any folder)
 node tools/firebase-admin/set-admin.js --email admin@example.com --admin true
 ```
+
+Release notice broadcast (develop)
+----------------------------------
+For in-app release announcements to all customers in the develop environment,
+see the dedicated guide:
+
+- `tools/firebase-admin/README_RELEASE_NOTICE.md`

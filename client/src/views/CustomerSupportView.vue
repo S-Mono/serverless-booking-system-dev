@@ -104,8 +104,10 @@ onUnmounted(() => {
 
                     <div class="contact-form">
                         <div class="phone-info">
-                            <p class="phone-label">店舗直通電話</p>
-                            <a href="tel:011-694-5449" class="phone-number">📞 011-694-5449</a>
+                            <p class="phone-label">フリーダイヤル</p>
+                            <a href="tel:0120105449" class="phone-number phone-number-main">📞 0120-10-5449</a>
+                            <p class="phone-sub-label">代表電話 <span class="call-fee-note">（通常通話料）</span></p>
+                            <a href="tel:0116945449" class="phone-number phone-number-sub">011-694-5449</a>
                             <p class="phone-hint">営業時間内にお電話いただくとすぐに対応できます</p>
                             <div class="email-section">
                                 <p class="email-label">メールでのお問い合わせ</p>
@@ -254,6 +256,28 @@ onUnmounted(() => {
     padding: 0.5rem 1rem;
     border-radius: 4px;
     transition: background 0.2s;
+}
+
+.phone-number-main {
+    margin-bottom: 0.4rem;
+}
+
+.phone-sub-label {
+    font-size: 0.88rem;
+    color: #666;
+    margin: 0.3rem 0 0.2rem 0;
+}
+
+.call-fee-note {
+    font-size: 0.72rem;
+}
+
+.phone-number-sub {
+    display: block;
+    font-size: 1.08rem;
+    color: #2c7a59;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
 }
 
 .phone-number:hover {

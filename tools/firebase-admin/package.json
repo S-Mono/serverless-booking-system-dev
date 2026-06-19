@@ -8,6 +8,7 @@
     "yargs": "^17.7.2"
   },
   "scripts": {
-    "set-admin": "node set-admin.js"
+    "set-admin": "node set-admin.js",
+    "send-release-notice": "node send-release-notice.js"
   }
 }

@@ -17,6 +17,7 @@ interface Message {
     is_read?: boolean
     is_cancelled?: boolean
     deleted_at?: Timestamp | null
+    release_url?: string
 }
 
 const router = useRouter()
@@ -98,7 +99,7 @@ const deleteOldMessages = async () => {
     }
 
     const ok = await dialog.confirm(
-        '最新の1件を残して、過去のお知らせを整理しますか？\n（1年以上経過したものは完全削除、それ以外は履歴に移動します）',
+        '最新の1件を残して、過去のお知らせを整理しますか？\n（配信日時に関係なく履歴に移動します）',
         '履歴の整理',
         'warning'
     )
@@ -109,34 +110,22 @@ const deleteOldMessages = async () => {
     try {
         const batch = writeBatch(db)
         const now = Timestamp.now()
-        const oneYearAgo = new Date()
-        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-        const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo)
 
         // 配列の [0] は最新なので残し、slice(1) で2件目以降を抽出（アクティブのみ）
         const targets = activeMessages.slice(1)
 
-        let physicalDeleteCount = 0
         let logicalDeleteCount = 0
 
         targets.forEach(msg => {
             const docRef = doc(db, 'messages', msg.id)
-
-            // 1年以上前のメッセージは物理削除
-            if (msg.created_at && msg.created_at.seconds < oneYearAgoTimestamp.seconds) {
-                batch.delete(docRef)
-                physicalDeleteCount++
-            } else {
-                // 1年未満は論理削除
-                batch.update(docRef, { deleted_at: now })
-                logicalDeleteCount++
-            }
+            batch.update(docRef, { deleted_at: now })
+            logicalDeleteCount++
         })
 
         await batch.commit()
 
         await dialog.alert(
-            `履歴を整理しました\n完全削除: ${physicalDeleteCount}件\n履歴に移動: ${logicalDeleteCount}件`,
+            `履歴を整理しました\n履歴に移動: ${logicalDeleteCount}件`,
             '完了'
         )
 
@@ -239,7 +228,7 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <p v-if="showArchived" class="archive-notice">※ 履歴は1年以上経過後、自動的に削除します。</p>
+        <p v-if="showArchived" class="archive-notice">※ 履歴は必要に応じて「履歴削除」で完全削除できます。</p>
 
         <div class="action-buttons">
             <button v-if="activeCount > 1 && !showArchived" @click="deleteOldMessages" class="cleanup-btn"
@@ -277,6 +266,9 @@ onUnmounted(() => {
                 <div class="msg-body">
                     {{ msg.body }}
                 </div>
+                <router-link v-if="msg.release_url" :to="msg.release_url" class="msg-link">
+                    リリース情報を見る
+                </router-link>
                 <div v-if="msg.deleted_at" class="archived-info">
                     整理日: {{ formatDate(msg.deleted_at) }}
                 </div>
@@ -495,6 +487,18 @@ onUnmounted(() => {
     line-height: 1.6;
     color: #555;
     font-size: 0.95rem;
+}
+
+.msg-link {
+    display: inline-block;
+    margin-top: 0.55rem;
+    color: #2d7fd1;
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.msg-link:hover {
+    text-decoration: underline;
 }
 
 /* 未読時のスタイル */

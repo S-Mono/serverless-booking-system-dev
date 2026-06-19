@@ -23,7 +23,8 @@ const goBack = () => {
                 <p>
                     <strong>事業者名:</strong> ヘアーサロン ジョイス<br>
                     <strong>所在地:</strong> 北海道札幌市手稲区星置１条３丁目３番１号<br>
-                    <strong>電話番号:</strong> 011-694-5449<br>
+                    <strong>フリーダイヤル:</strong> 0120-10-5449<br>
+                    <strong>代表電話:</strong> 011-694-5449 <small>（通常通話料）</small><br>
                     <strong>メールアドレス:</strong> monou1222@icloud.com
                 </p>
             </section>

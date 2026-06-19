@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+
+const appVersion = __APP_VERSION__
 </script>
 
 <template>
@@ -11,10 +13,13 @@ import { RouterLink } from 'vue-router'
                 <span class="footer-divider">|</span>
                 <RouterLink to="/privacy" class="footer-link">プライバシーポリシー</RouterLink>
                 <span class="footer-divider">|</span>
+                <RouterLink to="/releases" class="footer-link">リリース情報</RouterLink>
+                <span class="footer-divider">|</span>
                 <RouterLink to="/support" class="footer-link">カスタマーサポート</RouterLink>
             </div>
             <p class="footer-credit">効果音: <a href="https://otologic.jp" target="_blank" rel="noopener noreferrer"
                     class="footer-link">OtoLogic</a></p>
+            <p class="footer-version">v{{ appVersion }}</p>
         </div>
     </footer>
 </template>
@@ -23,7 +28,7 @@ import { RouterLink } from 'vue-router'
 .app-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #e0e0e0;
-    padding: 1rem 0;
+    padding: 1rem 0 calc(1rem + env(safe-area-inset-bottom, 0px) + 6px);
     margin-top: auto;
 }
 
@@ -47,6 +52,12 @@ import { RouterLink } from 'vue-router'
 .footer-credit {
     color: #666;
     font-size: 0.75rem;
+    margin: 0;
+}
+
+.footer-version {
+    color: #9aa0a6;
+    font-size: 0.68rem;
     margin: 0;
 }
 
@@ -90,6 +101,10 @@ import { RouterLink } from 'vue-router'
 
     .footer-credit {
         font-size: 0.7rem;
+    }
+
+    .footer-version {
+        font-size: 0.65rem;
     }
 
     .footer-link {
