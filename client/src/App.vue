@@ -308,6 +308,10 @@ const retryInit = async () => {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  box-sizing: border-box;
+  overflow: hidden;
   /* ノーマルモード: 下に34px */
   padding-bottom: 34px;
   padding-bottom: env(safe-area-inset-bottom, 34px);
@@ -339,8 +343,7 @@ main {
   width: 100%;
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
 }
 
 .app-layout.admin-mode {
