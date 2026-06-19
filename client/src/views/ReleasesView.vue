@@ -84,7 +84,7 @@ const releases: ReleaseItem[] = [
 
 .releases-header h1 {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   color: #2c3e50;
 }
 
@@ -97,7 +97,7 @@ const releases: ReleaseItem[] = [
 .lead {
   margin: 0;
   color: #667;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .release-card {
@@ -116,7 +116,7 @@ const releases: ReleaseItem[] = [
 
 .release-head h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   color: #223;
 }
 
@@ -144,6 +144,7 @@ const releases: ReleaseItem[] = [
   margin: 0;
   padding-left: 1.1rem;
   color: #333;
+  font-size: 0.84rem;
 }
 
 .highlights li {
@@ -153,7 +154,7 @@ const releases: ReleaseItem[] = [
 .minor {
   margin: 0.55rem 0 0;
   color: #667;
-  font-size: 0.86rem;
+  font-size: 0.78rem;
 }
 
 @media (max-width: 768px) {

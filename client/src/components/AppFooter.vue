@@ -27,7 +27,7 @@ const appVersion = __APP_VERSION__
 .app-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #e0e0e0;
-    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px) + 6px);
+    padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom, 0px) + 4px);
     margin-top: auto;
 }
 
@@ -39,7 +39,7 @@ const appVersion = __APP_VERSION__
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.35rem;
 }
 
 .footer-copyright {
@@ -63,7 +63,7 @@ const appVersion = __APP_VERSION__
 .footer-links {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
 }
 
 .footer-link {
@@ -87,7 +87,7 @@ const appVersion = __APP_VERSION__
     .footer-content {
         flex-direction: column;
         text-align: center;
-        gap: 0.75rem;
+        gap: 0.5rem;
     }
 
     .footer-copyright {
