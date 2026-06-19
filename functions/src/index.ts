@@ -167,11 +167,32 @@ const createTransporter = () => {
   return nodemailer.createTransport(config);
 };
 
+const isEnabledByEnv = (
+  envValue: string | undefined,
+  defaultValue = true
+): boolean => {
+  if (typeof envValue !== "string") return defaultValue;
+
+  const normalized = envValue.trim().toLowerCase();
+  if (!normalized) return defaultValue;
+
+  return ["1", "true", "yes", "on"].includes(normalized);
+};
+
 const sendLineMessageToCustomer = async (
   lineUserId: string,
   text: string,
   reservationId: string
 ): Promise<void> => {
+  const enableCustomerPush = isEnabledByEnv(
+    process.env.LINE_ENABLE_CUSTOMER_PUSH,
+    true
+  );
+  if (!enableCustomerPush) {
+    logger.info("LINE customer push disabled by env", {reservationId});
+    return;
+  }
+
   const messagingToken = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
 
   if (!messagingToken) {
