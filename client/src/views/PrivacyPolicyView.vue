@@ -1,17 +1,7 @@
-<script setup lang="ts">
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
-const goBack = () => {
-    router.back()
-}
-</script>
-
 <template>
     <div class="privacy-container">
         <div class="privacy-header">
-            <button class="back-btn" @click="goBack">← 戻る</button>
+            <router-link to="/" class="back-btn">← 予約画面に戻る</router-link>
             <h1>プライバシーポリシー</h1>
         </div>
 

@@ -1,12 +1,4 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
-const goBack = () => {
-  router.back()
-}
-
 type ReleaseItem = {
   version: string
   date: string
@@ -33,7 +25,7 @@ const releases: ReleaseItem[] = [
 <template>
   <div class="releases-container">
     <div class="releases-header">
-      <button class="back-btn" @click="goBack">← 戻る</button>
+      <router-link to="/" class="back-btn">← 予約画面に戻る</router-link>
       <h1>リリース情報</h1>
     </div>
 
@@ -74,12 +66,19 @@ const releases: ReleaseItem[] = [
 }
 
 .back-btn {
-  border: 1px solid #c9c9c9;
-  border-radius: 18px;
-  background: #fff;
-  color: #444;
-  padding: 0.35rem 0.9rem;
+  background: #42b883;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
   cursor: pointer;
+  font-size: 0.9rem;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.back-btn:hover {
+  background: #35a372;
 }
 
 .releases-header h1 {

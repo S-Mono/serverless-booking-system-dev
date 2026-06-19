@@ -1,17 +1,7 @@
-<script setup lang="ts">
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
-const goBack = () => {
-    router.back()
-}
-</script>
-
 <template>
     <div class="terms-container">
         <div class="terms-header">
-            <button class="back-btn" @click="goBack">← 戻る</button>
+            <router-link to="/" class="back-btn">← 予約画面に戻る</router-link>
             <h1>利用規約</h1>
         </div>
 

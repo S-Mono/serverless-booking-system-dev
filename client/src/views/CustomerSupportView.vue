@@ -94,7 +94,7 @@ onUnmounted(() => {
     <div class="support-container">
         <div class="scroll-content">
             <div class="page-header">
-                <router-link to="/" class="back-btn">◀ 予約画面に戻る</router-link>
+                <router-link to="/" class="back-btn">← 予約画面に戻る</router-link>
                 <h2 class="page-title">カスタマーサポート</h2>
             </div>
 
@@ -190,11 +190,11 @@ onUnmounted(() => {
 }
 
 .back-btn {
-    background: transparent;
-    border: 1px solid #ccc;
-    color: #555;
-    padding: 0.4rem 1rem;
-    border-radius: 20px;
+    background: #42b883;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
     text-decoration: none;
@@ -202,8 +202,7 @@ onUnmounted(() => {
 }
 
 .back-btn:hover {
-    background: #f0f0f0;
-    color: #333;
+    background: #35a372;
 }
 
 .content-wrapper {
