@@ -27,7 +27,7 @@ const appVersion = __APP_VERSION__
 .app-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #e0e0e0;
-    padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom, 0px) + 4px);
+    padding: 0.35rem 0 calc(0.35rem + env(safe-area-inset-bottom, 0px) + 2px);
     margin-top: auto;
 }
 
@@ -87,22 +87,13 @@ const appVersion = __APP_VERSION__
 
 @media (max-width: 768px) {
     .app-footer {
-        padding: 0.25rem 0 calc(env(safe-area-inset-bottom, 0px) + 6px);
-        min-height: calc(
-            (0.8rem * 1.2) +
-            (0.8rem * 1.2) +
-            (0.7rem * 1.2) +
-            (0.35rem * 2) +
-            0.25rem +
-            env(safe-area-inset-bottom, 0px) +
-            6px
-        );
+        padding: 0.15rem 0 calc(env(safe-area-inset-bottom, 0px) + 2px);
     }
 
     .footer-content {
         flex-direction: column;
         text-align: center;
-        gap: 0.35rem;
+        gap: 0.2rem;
     }
 
     .footer-copyright {
