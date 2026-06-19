@@ -144,7 +144,7 @@ onUnmounted(() => {
 .support-container {
     max-width: 800px;
     margin: 0 auto;
-    height: calc(100vh - 60px - 80px);
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -432,7 +432,7 @@ textarea:disabled {
 
 @media (max-width: 768px) {
     .support-container {
-        height: calc(100vh - 60px - 60px);
+        height: 100%;
     }
 
     .scroll-content {

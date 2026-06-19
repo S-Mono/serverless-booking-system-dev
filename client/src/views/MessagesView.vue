@@ -282,12 +282,10 @@ onUnmounted(() => {
 .messages-container {
     max-width: 800px;
     margin: 0 auto;
-    /* App.vueのヘッダー(60px)とフッター(80px)を引いた高さを確保 */
-    height: calc(100vh - 60px - 80px);
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* 全体のスクロールは禁止 */
 }
 
 /* ページヘッダー：固定表示エリア */

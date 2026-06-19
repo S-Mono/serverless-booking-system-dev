@@ -337,8 +337,10 @@ header {
 
 main {
   width: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-layout.admin-mode {

@@ -508,12 +508,11 @@ const submitReservation = async () => {
 </template>
 
 <style scoped>
-/* コンテナを縦flexにし、高さを固定（ヘッダー60px + フッター拡張分を引く） */
+/* コンテナを縦flexにし、mainの残り高さを100%使う */
 .home-container {
   max-width: 1024px;
   margin: 0 auto;
-  height: calc(100vh - 60px - 90px);
-  height: calc(100dvh - 60px - 90px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
