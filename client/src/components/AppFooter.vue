@@ -45,12 +45,14 @@ const appVersion = __APP_VERSION__
 .footer-copyright {
     color: #666;
     font-size: 0.85rem;
+    line-height: 1.2;
     margin: 0;
 }
 
 .footer-credit {
     color: #666;
     font-size: 0.75rem;
+    line-height: 1.2;
     margin: 0;
 }
 
@@ -84,22 +86,38 @@ const appVersion = __APP_VERSION__
 }
 
 @media (max-width: 768px) {
+    .app-footer {
+        padding: 0.25rem 0 calc(env(safe-area-inset-bottom, 0px) + 6px);
+        min-height: calc(
+            (0.8rem * 1.2) +
+            (0.8rem * 1.2) +
+            (0.7rem * 1.2) +
+            (0.35rem * 2) +
+            0.25rem +
+            env(safe-area-inset-bottom, 0px) +
+            6px
+        );
+    }
+
     .footer-content {
         flex-direction: column;
         text-align: center;
-        gap: 0.5rem;
+        gap: 0.35rem;
     }
 
     .footer-copyright {
         font-size: 0.8rem;
+        line-height: 1.2;
     }
 
     .footer-links {
         font-size: 0.8rem;
+        line-height: 1.2;
     }
 
     .footer-credit {
         font-size: 0.7rem;
+        line-height: 1.2;
     }
 
     .footer-link {
