@@ -28,7 +28,7 @@ const appVersion = __APP_VERSION__
 .app-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #e0e0e0;
-    padding: 1rem 0 calc(1rem + env(safe-area-inset-bottom, 0px) + 6px);
+    padding: 1.2rem 0 calc(1.2rem + env(safe-area-inset-bottom, 0px) + 10px);
     margin-top: auto;
 }
 
