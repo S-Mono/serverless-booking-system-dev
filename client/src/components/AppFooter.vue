@@ -7,7 +7,7 @@ const appVersion = __APP_VERSION__
 <template>
     <footer class="app-footer">
         <div class="footer-content">
-            <p class="footer-copyright">&copy; 2025 ヘアーサロン JOY's 予約システム</p>
+            <p class="footer-copyright">&copy; 2025 ヘアーサロン JOY's 予約システム <span class="footer-version">v{{ appVersion }}</span></p>
             <div class="footer-links">
                 <RouterLink to="/terms" class="footer-link">利用規約</RouterLink>
                 <span class="footer-divider">|</span>
@@ -19,7 +19,6 @@ const appVersion = __APP_VERSION__
             </div>
             <p class="footer-credit">効果音: <a href="https://otologic.jp" target="_blank" rel="noopener noreferrer"
                     class="footer-link">OtoLogic</a></p>
-            <p class="footer-version">v{{ appVersion }}</p>
         </div>
     </footer>
 </template>
@@ -28,7 +27,7 @@ const appVersion = __APP_VERSION__
 .app-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #e0e0e0;
-    padding: 1.2rem 0 calc(1.2rem + env(safe-area-inset-bottom, 0px) + 10px);
+    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px) + 6px);
     margin-top: auto;
 }
 
@@ -57,8 +56,8 @@ const appVersion = __APP_VERSION__
 
 .footer-version {
     color: #9aa0a6;
-    font-size: 0.68rem;
-    margin: 0;
+    font-size: 0.65rem;
+    margin-left: 0.4rem;
 }
 
 .footer-links {
@@ -101,10 +100,6 @@ const appVersion = __APP_VERSION__
 
     .footer-credit {
         font-size: 0.7rem;
-    }
-
-    .footer-version {
-        font-size: 0.65rem;
     }
 
     .footer-link {

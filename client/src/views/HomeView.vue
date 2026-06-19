@@ -512,8 +512,8 @@ const submitReservation = async () => {
 .home-container {
   max-width: 1024px;
   margin: 0 auto;
-  height: calc(100vh - 60px - 120px);
-  height: calc(100dvh - 60px - 120px);
+  height: calc(100vh - 60px - 90px);
+  height: calc(100dvh - 60px - 90px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
