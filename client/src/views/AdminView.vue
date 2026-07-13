@@ -1745,32 +1745,34 @@ const exportReservationsToExcel = async () => {
                 履歴はありません
               </div>
 
-              <div v-else class="history-list">
-                <div v-for="res in historyReservations" :key="res.id" class="history-card"
-                  :class="{ 'cancelled': res.status === 'cancelled' }" @click="openReservationDetail(res)">
-                  <div class="history-card-header">
-                    <span class="history-date">{{ formatDateJP(res.start_at.toDate()) }}</span>
-                    <span class="history-time">{{ formatTime(res.start_at) }} - {{ formatTime(res.end_at) }}</span>
-                    <span class="history-status" :class="res.status">
-                      {{ res.status === 'confirmed' ? '✓ 確定' : '✕ キャンセル' }}
-                    </span>
-                  </div>
-                  <div class="history-card-body">
-                    <div class="history-info-row">
-                      <span class="label">担当:</span>
-                      <span class="value">{{ getStaffName(res.staff_id) }}</span>
+              <div v-else class="history-list-scroll">
+                <div class="history-list">
+                  <div v-for="res in historyReservations" :key="res.id" class="history-card"
+                    :class="{ 'cancelled': res.status === 'cancelled' }" @click="openReservationDetail(res)">
+                    <div class="history-card-header">
+                      <span class="history-date">{{ formatDateJP(res.start_at.toDate()) }}</span>
+                      <span class="history-time">{{ formatTime(res.start_at) }} - {{ formatTime(res.end_at) }}</span>
+                      <span class="history-status" :class="res.status">
+                        {{ res.status === 'confirmed' ? '✓ 確定' : '✕ キャンセル' }}
+                      </span>
                     </div>
-                    <div class="history-info-row">
-                      <span class="label">顧客:</span>
-                      <span class="value">{{ res.customer_name || '不明' }}</span>
-                    </div>
-                    <div class="history-info-row">
-                      <span class="label">メニュー:</span>
-                      <span class="value">{{res.menu_items?.map(m => m.title).join(', ') || '-'}}</span>
-                    </div>
-                    <div v-if="res.total_price" class="history-info-row">
-                      <span class="label">金額:</span>
-                      <span class="value price">¥{{ res.total_price?.toLocaleString() }}</span>
+                    <div class="history-card-body">
+                      <div class="history-info-row">
+                        <span class="label">担当:</span>
+                        <span class="value">{{ getStaffName(res.staff_id) }}</span>
+                      </div>
+                      <div class="history-info-row">
+                        <span class="label">顧客:</span>
+                        <span class="value">{{ res.customer_name || '不明' }}</span>
+                      </div>
+                      <div class="history-info-row">
+                        <span class="label">メニュー:</span>
+                        <span class="value">{{res.menu_items?.map(m => m.title).join(', ') || '-'}}</span>
+                      </div>
+                      <div v-if="res.total_price" class="history-info-row">
+                        <span class="label">金額:</span>
+                        <span class="value price">¥{{ res.total_price?.toLocaleString() }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1913,14 +1915,16 @@ const exportReservationsToExcel = async () => {
 
         <div class="history-area">
           <h4>📋 この顧客の予約履歴</h4>
-          <ul v-if="customerHistory.length > 0" class="history-list">
-            <li v-for="h in customerHistory" :key="h.id" class="history-item"
-              :class="{ 'current': h.id === selectedReservation.id }">
-              <span class="h-date">{{ formatDate(h.start_at) }}</span>
-              <span class="h-menu">{{ h.menu_items[0]?.title }}</span>
-              <span class="h-status" :class="h.status">{{ h.status === 'confirmed' ? '済' : '未' }}</span>
-            </li>
-          </ul>
+          <div v-if="customerHistory.length > 0" class="customer-history-scroll">
+            <ul class="customer-history-list">
+              <li v-for="h in customerHistory" :key="h.id" class="history-item"
+                :class="{ 'current': h.id === selectedReservation.id }">
+                <span class="h-date">{{ formatDate(h.start_at) }}</span>
+                <span class="h-menu">{{ h.menu_items[0]?.title }}</span>
+                <span class="h-status" :class="h.status">{{ h.status === 'confirmed' ? '済' : '未' }}</span>
+              </li>
+            </ul>
+          </div>
           <p v-else class="no-history">履歴はありません</p>
         </div>
 
@@ -2907,6 +2911,90 @@ textarea {
   max-width: 450px;
 }
 
+.history-area {
+  margin-top: 1rem;
+  border-top: 1px solid #eee;
+  padding-top: 0.75rem;
+}
+
+.history-area h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.customer-history-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.customer-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid #eee;
+  font-size: 0.85rem;
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item.current {
+  background: #eef6ff;
+}
+
+.h-date {
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
+
+.h-menu {
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-status {
+  font-weight: bold;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 10px;
+}
+
+.h-status.confirmed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.h-status.pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.h-status.cancelled {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.no-history {
+  margin: 0;
+  color: #777;
+  font-size: 0.85rem;
+}
+
 .detail-body {
   display: flex;
   flex-direction: column;
@@ -3104,6 +3192,11 @@ textarea {
   padding: 1.5rem;
 }
 
+.history-list-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
 .history-info {
   display: flex;
   justify-content: space-between;
@@ -3225,6 +3318,18 @@ textarea {
   .modal-body {
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .customer-history-scroll {
+    max-height: 160px;
+  }
+
+  .history-list-scroll {
+    max-height: 52vh;
+  }
+
+  .history-item {
+    grid-template-columns: 76px 1fr auto;
   }
 
   .history-card-header {

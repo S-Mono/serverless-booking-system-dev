@@ -163,31 +163,31 @@ onMounted(() => { fetchData() })
               📋 メニュー・担当設定
             </button>
           </div>
+
+          <div class="side-card">
+            <h3>💰 消費税設定</h3>
+            <p class="side-desc">メニュー価格に加算する消費税率を設定します。</p>
+            <div class="staff-grid">
+              <div class="input-group">
+                <label>消費税率 (%)</label>
+                <input type="number" v-model="config.tax_rate" min="0" max="100" />
+              </div>
+              <div class="input-group" v-if="isDev">
+                <label>開発用：仮予約の自動確定 (15秒後)</label>
+                <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; cursor: pointer;">
+                  <input type="checkbox" v-model="config.auto_confirm_pending_reservations" style="width: 20px; height: 20px;" />
+                  <span>有効にする</span>
+                </label>
+              </div>
+            </div>
+            <div class="action-row">
+              <button @click="saveConfig" class="save-main-btn">税率を保存</button>
+            </div>
+          </div>
         </aside>
 
         <div class="settings-main">
           <div class="cards-grid">
-
-            <div class="setting-card">
-              <h3>💰 消費税設定</h3>
-              <p class="desc">メニュー価格に加算する消費税率を設定します。</p>
-              <div class="staff-grid">
-                <div class="input-group">
-                  <label>消費税率 (%)</label>
-                  <input type="number" v-model="config.tax_rate" min="0" max="100" />
-                </div>
-                <div class="input-group" v-if="isDev">
-                  <label>開発用：仮予約の自動確定 (15秒後)</label>
-                  <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" v-model="config.auto_confirm_pending_reservations" style="width: 20px; height: 20px;" />
-                    <span>有効にする</span>
-                  </label>
-                </div>
-              </div>
-              <div class="action-row">
-                <button @click="saveConfig" class="save-main-btn">税率を保存</button>
-              </div>
-            </div>
 
             <div class="setting-card calendar-card">
               <h3>📅 カレンダー・休日設定</h3>
