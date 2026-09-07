@@ -199,7 +199,8 @@ const submitReset = async () => {
 
 <style scoped>
 .reset-password-container {
-    min-height: 100vh;
+    /* main内に収めるため100vhではなく100%を使用（フッターはみ出し防止） */
+    min-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -211,11 +211,11 @@ onMounted(() => { fetchData() })
 
 <style scoped>
 .settings-container {
-  min-height: 100vh;
+  /* main内に収めるため100vhではなく100%を使用（フッターはみ出し防止） */
+  height: 100%;
   background-color: #f4f5f7;
   display: flex;
   flex-direction: column;
-  height: 100%;
   overflow: hidden;
 }
 

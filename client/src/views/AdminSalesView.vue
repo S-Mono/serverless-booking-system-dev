@@ -551,7 +551,8 @@ const exportToExcel = async () => {
 .sales-container {
     max-width: 100%;
     margin: 0 auto;
-    height: calc(100vh - 60px);
+    /* main内に収めるため100vhではなく100%を使用（フッターはみ出し防止） */
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
