@@ -309,6 +309,7 @@ const retryInit = async () => {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   height: 100vh;
   height: 100dvh;
   box-sizing: border-box;
@@ -349,6 +350,7 @@ main {
 
 .app-layout.admin-mode {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
