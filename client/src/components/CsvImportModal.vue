@@ -25,32 +25,61 @@
             </button>
           </div>
         </div>
-        <p class="hint">※ ヘッダー行の項目名を自動判別し、Shift-JIS / UTF-8 に両対応しています。</p>
+        <p class="hint">※ Shift-JIS / UTF-8、カンマ / タブ区切りの両形式に自動対応しています。</p>
       </div>
 
       <!-- ステップ2: プレビュー確認 -->
       <div v-else-if="step === 'preview'" class="modal-body preview-body">
-        <div class="summary-box">
-          <span>読み込み総数: <strong>{{ parsedList.length }}</strong> 件</span>
-          <span class="badge-new">登録対象: <strong>{{ validList.length }}</strong> 件</span>
-          <span v-if="skipCount > 0" class="badge-skip">除外（重複・番号なし）: {{ skipCount }} 件</span>
+        <!-- サマリー ＆ 表示フィルター -->
+        <div class="summary-bar">
+          <div class="summary-counts">
+            <span>総数: <strong>{{ parsedList.length }}</strong> 件</span>
+            <span class="badge-new">登録対象: <strong>{{ validList.length }}</strong> 件</span>
+            <span v-if="skipCount > 0" class="badge-skip">除外: {{ skipCount }} 件</span>
+          </div>
+
+          <div class="filter-tabs">
+            <button
+              type="button"
+              :class="{ active: viewFilter === 'all' }"
+              @click="viewFilter = 'all'; currentPage = 1"
+            >
+              すべて ({{ parsedList.length }})
+            </button>
+            <button
+              type="button"
+              :class="{ active: viewFilter === 'valid' }"
+              @click="viewFilter = 'valid'; currentPage = 1"
+            >
+              登録対象 ({{ validList.length }})
+            </button>
+            <button
+              v-if="skipCount > 0"
+              type="button"
+              :class="{ active: viewFilter === 'skip' }"
+              @click="viewFilter = 'skip'; currentPage = 1"
+            >
+              除外 ({{ skipCount }})
+            </button>
+          </div>
         </div>
 
+        <!-- プレビューテーブル -->
         <div class="table-scroll">
           <table class="preview-table">
             <thead>
               <tr>
-                <th>状態</th>
-                <th>電話番号</th>
-                <th>氏名（漢字）</th>
-                <th>氏名（カナ）</th>
-                <th>住所（郵便番号・住所1・2）</th>
-                <th>メモ</th>
+                <th style="width: 70px;">状態</th>
+                <th style="width: 130px;">電話番号</th>
+                <th style="width: 140px;">氏名（漢字）</th>
+                <th style="width: 140px;">氏名（カナ）</th>
+                <th>住所</th>
+                <th style="width: 150px;">メモ</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="(item, idx) in previewList"
+                v-for="(item, idx) in paginatedList"
                 :key="idx"
                 :class="{ 'row-skipped': item.isSkip }"
               >
@@ -59,8 +88,14 @@
                     {{ item.statusText }}
                   </span>
                 </td>
-                <td class="font-mono">{{ item.phone_formatted }}</td>
-                <td>{{ item.name_kanji || '-' }}</td>
+                <td class="font-mono">
+                  <div>{{ item.phone_formatted }}</div>
+                  <div v-if="item.phone_number2" class="sub-text">副: {{ item.phone_number2 }}</div>
+                </td>
+                <td>
+                  <div class="font-bold">{{ item.name_kanji || '-' }}</div>
+                  <div v-if="item.company_name" class="sub-text">🏢 {{ item.company_name }}</div>
+                </td>
                 <td>{{ item.name_kana || '-' }}</td>
                 <td class="text-truncate" :title="item.address_full">
                   {{ item.address_full || '-' }}
@@ -71,6 +106,33 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- ページネーション操作バー -->
+        <div class="pagination-bar">
+          <span class="pagination-info">
+            {{ filteredList.length }} 件中 {{ (currentPage - 1) * pageSize + 1 }} 〜
+            {{ Math.min(currentPage * pageSize, filteredList.length) }} 件を表示
+          </span>
+          <div class="pagination-controls">
+            <button
+              type="button"
+              :disabled="currentPage <= 1"
+              @click="currentPage--"
+              class="page-btn"
+            >
+              ◀ 前へ
+            </button>
+            <span class="page-current">{{ currentPage }} / {{ totalPages || 1 }} ページ</span>
+            <button
+              type="button"
+              :disabled="currentPage >= totalPages"
+              @click="currentPage++"
+              class="page-btn"
+            >
+              次へ ▶
+            </button>
+          </div>
         </div>
       </div>
 
@@ -86,7 +148,7 @@
           :disabled="validList.length === 0 || isSaving"
           @click="executeImport"
         >
-          {{ isSaving ? '登録中...' : `${validList.length} 件を登録する` }}
+          {{ isSaving ? '登録中...' : `${validList.length} 件を一括登録する` }}
         </button>
       </div>
     </div>
@@ -113,6 +175,11 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const step = ref<'select' | 'preview'>('select')
 const isSaving = ref(false)
 
+// ページネーション ＆ フィルター状態
+const currentPage = ref(1)
+const pageSize = ref(50)
+const viewFilter = ref<'all' | 'valid' | 'skip'>('all')
+
 interface ParsedCustomer {
   phone_raw: string
   phone_formatted: string
@@ -137,13 +204,27 @@ const parsedList = ref<ParsedCustomer[]>([])
 
 const validList = computed(() => parsedList.value.filter(item => !item.isSkip))
 const skipCount = computed(() => parsedList.value.filter(item => item.isSkip).length)
-const previewList = computed(() => parsedList.value.slice(0, 100))
+
+// フィルター別リスト
+const filteredList = computed(() => {
+  if (viewFilter.value === 'valid') return validList.value
+  if (viewFilter.value === 'skip') return parsedList.value.filter(item => item.isSkip)
+  return parsedList.value
+})
+
+const totalPages = computed(() => Math.ceil(filteredList.value.length / pageSize.value))
+
+// 現在のページに表示するリスト（50件単位）
+const paginatedList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredList.value.slice(start, start + pageSize.value)
+})
 
 const triggerFileInput = () => {
   fileInput.value?.click()
 }
 
-// 半角カナを全角カタカナに変換
+// 半角カナ → 全角カタカナ変換テーブル
 const kanaMap: Record<string, string> = {
   'ｶﾞ': 'ガ', 'ｷﾞ': 'ギ', 'ｸﾞ': 'グ', 'ｹﾞ': 'ゲ', 'ｺﾞ': 'ゴ',
   'ｻﾞ': 'ザ', 'ｼﾞ': 'ジ', 'ｽﾞ': 'ズ', 'ｾﾞ': 'ゼ', 'ｿﾞ': 'ゾ',
@@ -173,7 +254,7 @@ const toFullKana = (str: string) => {
   return res
 }
 
-// クォートや余分な空白を除去するパーサー（カンマまたはタブ対応）
+// CSV/TSV行パーサー
 const parseLine = (text: string, delimiter: string = ','): string[] => {
   const result: string[] = []
   let field = ''
@@ -225,7 +306,7 @@ const processFile = async (file: File) => {
       text = decoder.decode(buffer)
     }
 
-    // 既存の電話番号（主・副の両方）を取得して重複除外リストを作成
+    // 既存の顧客電話番号を取得
     const customersSnap = await getDocs(collection(db, 'customers'))
     const existingPhones = new Set<string>()
     customersSnap.docs.forEach(d => {
@@ -242,65 +323,56 @@ const processFile = async (file: File) => {
       return
     }
 
-    // カンマ区切りかタブ区切りかを自動判定
     const firstLine = lines[0] || ''
     const delimiter = (firstLine.split('\t').length > firstLine.split(',').length) ? '\t' : ','
-
-    // 1行目のヘッダーから各項目の列位置（インデックス）を動的に検索
     const firstCols = parseLine(firstLine, delimiter)
-    const findIndex = (keywords: string[]) => {
-      return firstCols.findIndex(col => keywords.some(k => col.includes(k)))
-    }
 
-    const hasHeader = findIndex(['電話', '名前', 'カナ', '住所', '郵便']) !== -1
-
-    // デフォルト（固定位置）のインデックス
-    let idxMap = {
-      phone1: 0,
-      phone2: 1,
-      postal: 2,
-      prefecture: 3,
-      address1: 4,
-      address2: 5,
-      companyKana: 7,
-      companyKanji: 8,
-      nameKana: 9,
-      nameKanji: 10,
-      customerType: 11,
-      memo1: 12,
-      memo2: 13,
-      memo3: 14,
-      email: 15,
-      rank: 16
-    }
-
-    // ヘッダー行が存在する場合は動的インデックスを採用
-    if (hasHeader) {
-      idxMap = {
-        phone1: findIndex(['電話番号１', '電話番号1', '電話番号', 'TEL1', 'TEL']),
-        phone2: findIndex(['電話番号２', '電話番号2', 'TEL2', '携帯']),
-        postal: findIndex(['郵便番号', '郵便', '〒']),
-        prefecture: findIndex(['都道府県']),
-        address1: findIndex(['住所１', '住所1']),
-        address2: findIndex(['住所２', '住所2']),
-        companyKana: findIndex(['会社名カナ', '法人名カナ']),
-        companyKanji: findIndex(['会社名漢字', '会社名', '法人名']),
-        nameKana: findIndex(['名前カナ', '氏名カナ', 'カナ']),
-        nameKanji: findIndex(['名前漢字', '氏名', 'お名前']),
-        customerType: findIndex(['個人法人区分', '個人法人', '区分']),
-        memo1: findIndex(['登録メモ１', '登録メモ1', 'メモ1']),
-        memo2: findIndex(['登録メモ２', '登録メモ2', 'メモ2']),
-        memo3: findIndex(['登録メモ３', '登録メモ3', 'メモ3']),
-        email: findIndex(['メールアドレス', 'メール', 'mail']),
-        rank: findIndex(['ランク'])
+    // 完全一致最優先 ＆ 除外指定つきの厳密な列検索関数
+    const findIndexStrict = (
+      exactKeywords: string[],
+      includeKeywords: string[] = [],
+      excludeKeywords: string[] = []
+    ) => {
+      // 1. 完全一致
+      for (const kw of exactKeywords) {
+        const idx = firstCols.findIndex(col => col === kw)
+        if (idx !== -1) return idx
       }
+      // 2. 部分一致（除外ワードに引っかからないもの）
+      for (const kw of includeKeywords) {
+        const idx = firstCols.findIndex(col => col.includes(kw) && !excludeKeywords.some(ex => col.includes(ex)))
+        if (idx !== -1) return idx
+      }
+      return -1
     }
 
-    const startRow = hasHeader ? 1 : 0
+    // 各項目のインデックスを厳密に特定
+    const idxMap = {
+      phone1: findIndexStrict(['電話番号１', '電話番号1', 'TEL1', '電話番号', 'TEL'], ['電話番号', 'TEL'], ['２', '2']),
+      phone2: findIndexStrict(['電話番号２', '電話番号2', 'TEL2', '携帯番号', '携帯'], ['電話番号２', '電話番号2', 'TEL2', '携帯']),
+      postal: findIndexStrict(['郵便番号', '郵便', '〒'], ['郵便', '〒']),
+      prefecture: findIndexStrict(['都道府県'], ['都道府県']),
+      address1: findIndexStrict(['住所１', '住所1', '住所'], ['住所１', '住所1'], ['２', '2', 'コード']),
+      address2: findIndexStrict(['住所２', '住所2', '建物名', 'マンション名', '方書'], ['住所２', '住所2', '建物', '方書'], ['コード']),
+      companyKana: findIndexStrict(['会社名カナ', '法人名カナ', '勤務先カナ'], ['会社名カナ', '法人名カナ']),
+      companyKanji: findIndexStrict(['会社名漢字', '会社名', '法人名', '勤務先'], ['会社名', '法人名'], ['カナ']),
+      // ★「会社名カナ」「法人名カナ」を絶対に拾わないように除外指定
+      nameKana: findIndexStrict(['名前カナ', '氏名カナ', '名前（カナ）', '氏名（カナ）', 'フリガナ', 'ふりがな'], ['名前カナ', '氏名カナ', 'カナ'], ['会社', '法人']),
+      // ★「会社名漢字」を絶対に拾わないように除外指定
+      nameKanji: findIndexStrict(['名前漢字', '氏名漢字', '名前', '氏名', 'お名前', '顧客名'], ['名前', '氏名'], ['会社', '法人', 'カナ', 'コード']),
+      customerType: findIndexStrict(['個人法人区分', '個人法人', '区分', '種別'], ['個人法人', '区分']),
+      memo1: findIndexStrict(['登録メモ１', '登録メモ1', 'メモ１', 'メモ1'], ['メモ１', 'メモ1']),
+      memo2: findIndexStrict(['登録メモ２', '登録メモ2', 'メモ２', 'メモ2'], ['メモ２', 'メモ2']),
+      memo3: findIndexStrict(['登録メモ３', '登録メモ3', 'メモ３', 'メモ3'], ['メモ３', 'メモ3']),
+      email: findIndexStrict(['メールアドレス', 'メール', 'E-mail', 'mail'], ['メール', 'mail']),
+      rank: findIndexStrict(['ランク', '会員ランク'], ['ランク'])
+    }
+
     const seenInFile = new Set<string>()
     const parsed: ParsedCustomer[] = []
 
-    for (let i = startRow; i < lines.length; i++) {
+    // 1行目はヘッダーなのでスキップ
+    for (let i = 1; i < lines.length; i++) {
       const cols = parseLine(lines[i] || '', delimiter)
       if (cols.length <= 1) continue
 
@@ -313,7 +385,6 @@ const processFile = async (file: File) => {
       const nameKanji = getCol(idxMap.nameKanji) || getCol(idxMap.companyKanji)
       const nameKana = toFullKana(getCol(idxMap.nameKana) || getCol(idxMap.companyKana))
 
-      // 住所情報の取得
       const postalCode = getCol(idxMap.postal).replace(/\D/g, '')
       const prefecture = getCol(idxMap.prefecture)
       const address1 = getCol(idxMap.address1)
@@ -323,7 +394,6 @@ const processFile = async (file: File) => {
       const email = getCol(idxMap.email)
       const rank = getCol(idxMap.rank)
 
-      // メモ1〜3の結合
       const memoParts: string[] = []
       const m1 = getCol(idxMap.memo1)
       const m2 = getCol(idxMap.memo2)
@@ -332,7 +402,6 @@ const processFile = async (file: File) => {
       if (m2) memoParts.push(m2)
       if (m3) memoParts.push(m3)
 
-      // プレビュー表示用住所
       const postalDisplay = postalCode ? (postalCode.length === 7 ? `〒${postalCode.slice(0, 3)}-${postalCode.slice(3)} ` : `〒${postalCode} `) : ''
       const addressFull = `${postalDisplay}${prefecture}${address1} ${address2}`.trim()
 
@@ -374,6 +443,7 @@ const processFile = async (file: File) => {
     }
 
     parsedList.value = parsed
+    currentPage.value = 1
     step.value = 'preview'
   } catch (err) {
     console.error(err)
@@ -431,6 +501,7 @@ const executeImport = async () => {
 const close = () => {
   step.value = 'select'
   parsedList.value = []
+  currentPage.value = 1
   if (fileInput.value) fileInput.value.value = ''
   emit('update:modelValue', false)
 }
@@ -454,9 +525,9 @@ const close = () => {
   background: white;
   padding: 1.5rem;
   border-radius: 10px;
-  width: 90%;
-  max-width: 860px;
-  max-height: 85vh;
+  width: 95%;
+  max-width: 920px;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
 }
@@ -484,15 +555,17 @@ const close = () => {
 }
 
 .modal-body {
-  padding: 1.2rem 0;
+  padding: 1rem 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .drop-zone {
   border: 2px dashed #3498db;
   border-radius: 8px;
   background: #f8fbfe;
-  padding: 3rem 1rem;
+  padding: 3.5rem 1rem;
   text-align: center;
 }
 
@@ -522,11 +595,19 @@ const close = () => {
   text-align: center;
 }
 
-.summary-box {
+.summary-bar {
   display: flex;
-  gap: 1rem;
+  justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.summary-counts {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
   font-size: 0.9rem;
 }
 
@@ -544,8 +625,33 @@ const close = () => {
   border-radius: 4px;
 }
 
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  background: #f0f0f0;
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.filter-tabs button {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #666;
+}
+
+.filter-tabs button.active {
+  background: white;
+  color: #2c3e50;
+  font-weight: bold;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
 .table-scroll {
-  max-height: 380px;
+  max-height: 420px;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 6px;
@@ -565,10 +671,12 @@ const close = () => {
 }
 
 .preview-table th {
-  background: #f5f5f5;
+  background: #f8f9fa;
   position: sticky;
   top: 0;
   z-index: 2;
+  font-weight: bold;
+  color: #444;
 }
 
 .row-skipped {
@@ -593,7 +701,7 @@ const close = () => {
 }
 
 .text-truncate {
-  max-width: 220px;
+  max-width: 200px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -601,6 +709,52 @@ const close = () => {
 
 .font-mono {
   font-family: monospace;
+}
+
+.font-bold {
+  font-weight: bold;
+}
+
+.sub-text {
+  font-size: 0.75rem;
+  color: #7f8c8d;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.pagination-info {
+  color: #666;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-btn {
+  padding: 0.3rem 0.75rem;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-current {
+  font-weight: bold;
+  color: #333;
 }
 
 .modal-actions {
