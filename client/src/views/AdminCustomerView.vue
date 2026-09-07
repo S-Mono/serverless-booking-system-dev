@@ -587,28 +587,33 @@ onMounted(() => { fetchCustomers() })
 .admin-body {
     flex: 1;
     overflow-y: auto;
-    padding: 2rem;
+    padding: 1.5rem;
     box-sizing: border-box;
 }
 
+/* --- コンテナとコンテンツ全体の幅を拡張 --- */
 .content-wrapper {
-    max-width: 1000px;
+    width: 100%;
+    max-width: 1500px; /* 横幅を十分に確保 */
     margin: 0 auto;
+    box-sizing: border-box;
 }
 
 .action-bar {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 1rem;
+    align-items: center;
+    margin-bottom: 1.2rem;
     flex-wrap: wrap;
     gap: 1rem;
 }
 
 .search-box input {
-    padding: 0.6rem;
-    width: 300px;
+    padding: 0.6rem 0.8rem;
+    width: 320px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-size: 0.95rem;
 }
 
 .add-btn {
@@ -621,54 +626,95 @@ onMounted(() => { fetchCustomers() })
     cursor: pointer;
 }
 
+.export-btn {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
 .table-container {
     background: white;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    overflow-x: auto; /* 画面が狭いときは横スクロール */
+    width: 100%;
 }
 
+/* --- テーブルと各セルの改行制御 --- */
 .customer-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 600px;
+    min-width: 980px; /* 項目が潰れない最小幅 */
+    text-align: left;
 }
 
 .customer-table th,
 .customer-table td {
-    padding: 1rem;
-    text-align: left;
+    padding: 0.85rem 1rem;
     border-bottom: 1px solid #eee;
+    vertical-align: middle;
 }
 
 .customer-table th {
     background: #f8f9fa;
-    color: #555;
+    color: #4a5568;
     font-weight: bold;
+    font-size: 0.88rem;
+    white-space: nowrap; /* ヘッダーの不自然な改行を防止 */
 }
 
+/* 氏名セル */
 .name-cell {
-    font-weight: bold;
-    color: #2c3e50;
+    min-width: 160px;
+    white-space: nowrap;
+}
+
+/* 電話番号の縦改行を防止 */
+.customer-table td:nth-child(2) {
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.95rem;
+}
+
+/* 住所セル */
+.customer-table td:nth-child(3) {
+    min-width: 180px;
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 種別・利用メニュー */
+.customer-table td:nth-child(4),
+.customer-table td:nth-child(5) {
+    white-space: nowrap;
 }
 
 .memo-cell {
-    color: #777;
-    font-size: 0.9rem;
+    color: #718096;
+    font-size: 0.85rem;
     max-width: 200px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+.actions-col,
 .actions-cell {
     white-space: nowrap;
+    text-align: right;
+    width: 150px;
 }
 
 .no-data {
     text-align: center;
     color: #999;
-    padding: 2rem;
+    padding: 2.5rem;
 }
 
 .edit-btn {
@@ -678,7 +724,7 @@ onMounted(() => { fetchCustomers() })
     padding: 0.4rem 0.8rem;
     border-radius: 4px;
     cursor: pointer;
-    margin-right: 0.5rem;
+    margin-right: 0.4rem;
     font-size: 0.85rem;
 }
 
@@ -692,6 +738,7 @@ onMounted(() => { fetchCustomers() })
     font-size: 0.85rem;
 }
 
+/* モーダル */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -710,7 +757,7 @@ onMounted(() => { fetchCustomers() })
     padding: 1.5rem;
     border-radius: 8px;
     width: 90%;
-    max-width: 600px;
+    max-width: 650px;
     max-height: 90vh;
     overflow-y: auto;
     display: flex;
@@ -745,18 +792,18 @@ onMounted(() => { fetchCustomers() })
 .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.5rem;
 }
 
 .form-section {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.85rem;
 }
 
 .form-row {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
 }
 
 .form-group {
@@ -768,7 +815,7 @@ onMounted(() => { fetchCustomers() })
 
 label {
     font-weight: bold;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     color: #555;
 }
 
@@ -777,11 +824,12 @@ label {
 }
 
 input,
+select,
 textarea {
-    padding: 0.6rem;
+    padding: 0.55rem;
     border: 1px solid #ccc;
     border-radius: 4px;
-    font-size: 1rem;
+    font-size: 0.95rem;
 }
 
 textarea {
@@ -791,7 +839,7 @@ textarea {
 
 .modal-actions {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     justify-content: flex-end;
     margin-top: 0.5rem;
 }
@@ -800,7 +848,7 @@ textarea {
     background: #3498db;
     color: white;
     border: none;
-    padding: 0.6rem 2rem;
+    padding: 0.6rem 1.8rem;
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
@@ -814,7 +862,7 @@ textarea {
     background: #27ae60;
     color: white;
     border: none;
-    padding: 0.6rem 1.5rem;
+    padding: 0.6rem 1.2rem;
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
@@ -831,7 +879,7 @@ textarea {
     background: #9b59b6;
     color: white;
     border: none;
-    padding: 0.6rem 1.5rem;
+    padding: 0.6rem 1.2rem;
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
@@ -848,7 +896,7 @@ textarea {
     background: #95a5a6;
     color: white;
     border: none;
-    padding: 0.6rem 2rem;
+    padding: 0.6rem 1.5rem;
     border-radius: 4px;
     font-weight: bold;
     cursor: pointer;
@@ -870,13 +918,14 @@ textarea {
 
 .radio-group {
     display: flex;
-    gap: 1.5rem;
+    gap: 1.2rem;
+    flex-wrap: wrap;
 }
 
 .radio-group label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     font-weight: normal;
     cursor: pointer;
 }
@@ -890,7 +939,7 @@ textarea {
 
 .history-section h4 {
     margin: 0 0 0.5rem 0;
-    font-size: 1rem;
+    font-size: 0.95rem;
     color: #555;
     border-bottom: 2px solid #ddd;
     padding-bottom: 0.3rem;
@@ -912,7 +961,7 @@ textarea {
     justify-content: space-between;
     padding: 0.5rem 0;
     border-bottom: 1px dashed #eee;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }
 
 .h-date {
@@ -925,39 +974,36 @@ textarea {
 }
 
 .h-status {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     padding: 2px 6px;
     border-radius: 4px;
     color: white;
 }
 
-/* 👇 ステータス色分け */
-/* 確: 緑 */
+/* ステータス色分け */
 .status-confirmed {
     background: #27ae60;
 }
 
-/* 仮: 紫 */
 .status-pending {
     background: #9b59b6;
 }
 
-/* 済: グレー */
 .status-done {
     background: #7f8c8d;
 }
 
 .no-history {
     color: #999;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     text-align: center;
     padding: 1rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .form-row {
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem;
     }
 
     .table-container {
