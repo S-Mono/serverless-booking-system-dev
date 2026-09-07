@@ -400,6 +400,7 @@ onMounted(() => { fetchCustomers() })
                                 <th style="width: 40px; text-align: center;">
                                     <input type="checkbox" v-model="selectAll" />
                                 </th>
+                                <th>お名前 (漢字)</th>
                                 <th>お名前 (カナ)</th>
                                 <th>電話番号</th>
                                 <th>住所</th>
@@ -415,6 +416,7 @@ onMounted(() => { fetchCustomers() })
                                 <td style="text-align: center;">
                                     <input type="checkbox" :value="cust.id" v-model="selectedIds" />
                                 </td>
+                                <td class="name-cell">{{ cust.name_kanji || '-' }}</td>
                                 <td class="name-cell">{{ cust.name_kana }}</td>
                                 <td>{{ formatPhoneNumber(cust.phone_number || '') }}</td>
                                 <td style="font-size: 0.85rem; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
@@ -438,7 +440,7 @@ onMounted(() => { fetchCustomers() })
                                 </td>
                             </tr>
                             <tr v-if="filteredCustomers.length === 0">
-                                <td colspan="8" class="no-data">データが見つかりません</td>
+                                <td colspan="9" class="no-data">データが見つかりません</td>
                             </tr>
                         </tbody>
                     </table>

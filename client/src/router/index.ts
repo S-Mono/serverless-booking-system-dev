@@ -104,6 +104,13 @@ const router = createRouter({
       component: () => import('../views/AdminSalesView.vue'),
       meta: { requiresAdmin: true }
     },
+    // 👇 追加: 着信履歴画面
+    {
+      path: '/admin/incoming-calls',
+      name: 'admin-incoming-calls',
+      component: () => import('../views/AdminIncomingCallsView.vue'),
+      meta: { requiresAdmin: true }
+    },
     // 👇 追加: 顧客カルテ一覧
     {
       path: '/admin/customers/:customerId/records',

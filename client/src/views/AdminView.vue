@@ -1664,6 +1664,7 @@ const exportReservationsToExcel = async () => {
         </button>
         <button @click="exportReservationsToExcel" class="export-btn" title="当日から未来の予約をExcelに出力">📥 Excel出力</button>
         <button @click="router.push('/admin/customers')" class="nav-link-btn">👥 顧客管理</button>
+        <button @click="router.push('/admin/incoming-calls')" class="nav-link-btn">📞 着信履歴</button>
         <button @click="router.push('/admin/sales')" class="nav-link-btn">📊 売上分析</button>
         <div class="status-badge">🟢 リアルタイム接続中</div>
         <button @click="$router.push('/admin/settings')" class="settings-link-btn">⚙ 設定</button>

@@ -11,6 +11,7 @@ const router = useRouter()
 interface Customer {
     id: string
     name_kana: string
+    name_kanji?: string
     phone_number: string
     deleted_at: Timestamp
 }
@@ -155,6 +156,7 @@ onMounted(() => { fetchDeletedCustomers() })
                                 <th style="width: 40px; text-align: center;">
                                     <input type="checkbox" v-model="selectAll" />
                                 </th>
+                                <th>お名前 (漢字)</th>
                                 <th>お名前 (カナ)</th>
                                 <th>電話番号</th>
                                 <th>削除日時</th>
@@ -167,6 +169,7 @@ onMounted(() => { fetchDeletedCustomers() })
                                 <td style="text-align: center;">
                                     <input type="checkbox" :value="cust.id" v-model="selectedIds" />
                                 </td>
+                                <td class="name-cell">{{ cust.name_kanji || '-' }}</td>
                                 <td class="name-cell">{{ cust.name_kana }}</td>
                                 <td>{{ cust.phone_number }}</td>
                                 <td class="date-cell">{{ formatDate(cust.deleted_at) }}</td>
@@ -176,7 +179,7 @@ onMounted(() => { fetchDeletedCustomers() })
                                 </td>
                             </tr>
                             <tr v-if="deletedCustomers.length === 0">
-                                <td colspan="5" class="no-data">削除済みの顧客はありません</td>
+                                <td colspan="6" class="no-data">削除済みの顧客はありません</td>
                             </tr>
                         </tbody>
                     </table>
