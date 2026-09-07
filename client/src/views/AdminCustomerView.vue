@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router' // 👈 useRoute 追加
 import { db } from '../lib/firebase'
-import { collection, getDocs, doc, query, where, orderBy, Timestamp, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, query, where, orderBy, Timestamp, addDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import CsvImportModal from '@/components/CsvImportModal.vue'
@@ -61,6 +61,55 @@ const isChangingPassword = ref(false)
 const targetCustomerId = ref('')
 
 const showImportModal = ref(false)
+
+// 選択された顧客IDの配列
+const selectedIds = ref<string[]>([])
+
+// 全選択チェックボックスの状態（表示中の顧客に対して全選択/全解除）
+const selectAll = computed({
+  get: () => {
+    return filteredCustomers.value.length > 0 &&
+           filteredCustomers.value.every(cust => selectedIds.value.includes(cust.id))
+  },
+  set: (value: boolean) => {
+    if (value) {
+      // 表示中のすべての顧客IDを選択状態にする
+      selectedIds.value = filteredCustomers.value.map(cust => cust.id)
+    } else {
+      selectedIds.value = []
+    }
+  }
+})
+
+// 一括削除（削除済みへ移動）処理
+const deleteSelectedCustomers = async () => {
+  if (selectedIds.value.length === 0) return
+
+  const ok = await dialog.confirm(
+    `選択した ${selectedIds.value.length} 件の顧客を削除しますか？\n（削除済み一覧から復元可能です）`,
+    '一括削除の確認',
+    'danger'
+  )
+  if (!ok) return
+
+  try {
+    const batch = writeBatch(db)
+    for (const id of selectedIds.value) {
+      const docRef = doc(db, 'customers', id)
+      batch.update(docRef, {
+        deleted_at: Timestamp.now()
+      })
+    }
+    await batch.commit()
+
+    selectedIds.value = []
+    await fetchCustomers()
+    dialog.alert('選択した顧客を削除しました')
+  } catch (e) {
+    console.error('一括削除エラー:', e)
+    dialog.alert('一括削除に失敗しました')
+  }
+}
 
 // インポート完了時の再取得
 const handleImported = async () => {
@@ -330,6 +379,13 @@ onMounted(() => { fetchCustomers() })
                         <input type="text" v-model="searchQuery" @input="filterCustomers"
                             placeholder="名前(カナ) または 電話番号で検索..." />
                     </div>
+                    <!-- 👇 追加: 選択中のみ表示される一括削除UI -->
+                    <div class="bulk-actions" v-if="selectedIds.length > 0">
+                        <span class="selected-count">{{ selectedIds.length }}件選択中</span>
+                        <button @click="deleteSelectedCustomers" class="bulk-delete-btn">
+                            🗑️ 選択した顧客を一括削除
+                        </button>
+                    </div>
                     <button @click="openEditModal()" class="add-btn">＋ 顧客登録</button>
                     <button class="export-btn" @click="showImportModal = true">
                     📥 発信写録CSV取込
@@ -340,6 +396,10 @@ onMounted(() => { fetchCustomers() })
                     <table class="customer-table">
                         <thead>
                             <tr>
+                                <!-- 👇 全選択チェックボックス -->
+                                <th style="width: 40px; text-align: center;">
+                                    <input type="checkbox" v-model="selectAll" />
+                                </th>
                                 <th>お名前 (カナ)</th>
                                 <th>電話番号</th>
                                 <th>住所</th>
@@ -350,7 +410,11 @@ onMounted(() => { fetchCustomers() })
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="cust in filteredCustomers" :key="cust.id">
+                            <tr v-for="cust in filteredCustomers" :key="cust.id" :class="{ 'row-selected': selectedIds.includes(cust.id) }">
+                                <!-- 👇 個別選択チェックボックス -->
+                                <td style="text-align: center;">
+                                    <input type="checkbox" :value="cust.id" v-model="selectedIds" />
+                                </td>
                                 <td class="name-cell">{{ cust.name_kana }}</td>
                                 <td>{{ formatPhoneNumber(cust.phone_number || '') }}</td>
                                 <td style="font-size: 0.85rem; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
@@ -374,7 +438,7 @@ onMounted(() => { fetchCustomers() })
                                 </td>
                             </tr>
                             <tr v-if="filteredCustomers.length === 0">
-                                <td colspan="5" class="no-data">データが見つかりません</td>
+                                <td colspan="8" class="no-data">データが見つかりません</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1005,6 +1069,50 @@ textarea {
     font-size: 0.85rem;
     text-align: center;
     padding: 1rem;
+}
+
+/* 一括選択・一括削除UI */
+.bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: #fff5f5;
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid #feb2b2;
+}
+
+.selected-count {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #c53030;
+}
+
+.bulk-delete-btn {
+    background: #e53e3e;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.bulk-delete-btn:hover {
+    background: #c53030;
+}
+
+/* 選択された行の背景色ハイライト */
+.row-selected {
+    background-color: #ebf8ff !important;
+}
+
+/* チェックボックスの見た目調整 */
+.customer-table input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
 }
 
 @media (max-width: 768px) {
