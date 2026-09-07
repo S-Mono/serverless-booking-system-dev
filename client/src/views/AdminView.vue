@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { db, auth, messaging, VAPID_KEY } from '../lib/firebase'
 import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, Timestamp, onSnapshot, getDoc, type Unsubscribe } from 'firebase/firestore'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 // プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
 import { getToken, onMessage } from 'firebase/messaging'
@@ -17,6 +17,7 @@ import {
   type ShopConfigData
 } from '../lib/businessHours'
 
+const route = useRoute()
 const router = useRouter()
 const dialog = useDialogStore()
 
@@ -759,6 +760,63 @@ const handleRecordNumberInput = async (event: Event) => {
   }
 }
 
+// --- CTI着信からの予約登録ハンドラ ---
+const handleIncomingCallReservation = async () => {
+  const phone = route.query.phone as string | undefined
+  const customerId = route.query.customerId as string | undefined
+  const customerName = route.query.customerName as string | undefined
+
+  if (phone) {
+    // カルテ番号を取得（既存顧客の場合）
+    let recordNumber = ''
+    if (customerId) {
+      try {
+        const customerDoc = await getDoc(doc(db, 'customers', customerId))
+        if (customerDoc.exists()) {
+          recordNumber = customerDoc.data().record_number || ''
+        }
+      } catch (e) {
+        console.error('カルテ番号取得エラー:', e)
+      }
+    }
+
+    // 現在時刻の直近15分刻みを開始日時の初期値にする
+    const now = new Date()
+    const minutes = Math.ceil(now.getMinutes() / 15) * 15
+    now.setMinutes(minutes, 0, 0)
+
+    isEditing.value = false
+    editingId.value = null
+
+    // 予約フォームの初期化
+    newReservation.value = {
+      staff_id: staffs.value[0]?.id || '', // デフォルトで最初のスタッフを選択
+      start_time: toLocalISOString(now),
+      end_time: '',
+      customer_name: customerName || '',
+      customer_phone: formatPhoneNumber(phone),
+      customer_id: customerId || '',
+      record_number: recordNumber,
+      selectedMenuIds: [],
+      note: '【電話受付】'
+    }
+
+    // 予約作成モーダルを開く（showModalを使用）
+    showModal.value = true
+
+    // URLからクエリパラメータを除去（画面リロード時の重複展開防止）
+    router.replace({ path: '/admin', query: {} })
+  }
+}
+
+// URLクエリの変化（着信からの遷移）を監視
+watch(
+  () => route.query,
+  () => {
+    handleIncomingCallReservation()
+  }
+)
+
 const selectCustomer = (customer: { id: string, name: string, phone: string, record_number?: string }) => {
   newReservation.value.customer_id = customer.id
   newReservation.value.customer_name = customer.name
@@ -1044,7 +1102,7 @@ const restoreReservation = async (res: Reservation) => {
   }
 }
 
-// �🟢 予約確定 (メッセージ作成機能付き)
+// 🟢 予約確定 (メッセージ作成機能付き)
 const approveReservation = async (res: Reservation) => {
   // 🟢 予約内容の確認ダイアログ
   const startDate = res.start_at.toDate()
@@ -1325,6 +1383,9 @@ onMounted(async () => {
   preloadChime()
   // 通知状態を確認・復元
   await checkNotificationStatus()
+
+  // 着信クエリパラメータがあるかチェックしてモーダル起動
+  handleIncomingCallReservation()
 
   // Register a single foreground onMessage handler for FCM so admin sees alerts
   // even when they're viewing a different date. Keep unregister function in module scope.
@@ -1789,7 +1850,7 @@ const exportReservationsToExcel = async () => {
           <h3>{{ isEditing ? '予約の編集' : '新規予約 (電話受付)' }}</h3>
           <button class="close-x-btn" @click="showModal = false">×</button>
         </div>
-        <div class="form-group"><label>担当スタッフ</label><select v-model="newReservation.staff_id" disabled>
+        <div class="form-group"><label>担当スタッフ</label><select v-model="newReservation.staff_id">
             <option v-for="s in staffs" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select></div>
         <div class="form-group">

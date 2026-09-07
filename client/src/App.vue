@@ -6,8 +6,8 @@ import { onAuthStateChanged, signOut, type Unsubscribe } from 'firebase/auth'
 import { collection, query, where, onSnapshot, doc, setDoc, Timestamp } from 'firebase/firestore'
 import { useUserStore } from './stores/user'
 import { useLineAuthStore } from './stores/lineAuth'
-import liff from '@line/liff'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import IncomingCallDialog from './components/IncomingCallDialog.vue'
 import AppFooter from './components/AppFooter.vue'
 
 const userStore = useUserStore()
@@ -165,6 +165,7 @@ const retryInit = async () => {
   <!-- メインコンテンツ -->
   <div v-else class="app-layout" :class="{ 'admin-mode': isAdminPage }">
     <ConfirmDialog />
+    <IncomingCallDialog />
     <header>
       <div :class="['header-inner', isAdminPage ? 'container-fluid' : 'container']">
         <h1>
