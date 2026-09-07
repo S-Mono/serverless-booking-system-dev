@@ -626,3 +626,18 @@ main {
   z-index: 150;
 }
 </style>
+
+<style>
+/* グローバルリセット（scoped不可: body/htmlのため）
+   ブラウザ標準の body { margin: 8px } を除去し、
+   100dvh レイアウトが16px分はみ出してフッターが切れるのを防ぐ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  height: 100dvh;
+}
+</style>
