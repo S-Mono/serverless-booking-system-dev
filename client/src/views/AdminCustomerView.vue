@@ -9,7 +9,7 @@ import CsvImportModal from '@/components/CsvImportModal.vue'
 
 const dialog = useDialogStore()
 const router = useRouter()
-const route = useRoute() // 👈 追加
+const route = useRoute()
 const functions = getFunctions(undefined, 'asia-northeast1')
 
 interface Customer {
@@ -28,7 +28,7 @@ interface Customer {
     email?: string
     rank?: string
     memo?: string
-    preferred_category?: 'barber' | 'beauty' | 'student' | 'chiro'
+    preferred_category?: 'barber' | 'beauty' | 'student' | 'chiro' | null
     // true => 既存顧客, false => 新規顧客
     is_existing_customer?: boolean
     created_at?: Timestamp
@@ -132,7 +132,7 @@ const openEditModal = async (customer?: Customer) => {
         editForm.value.record_number = customer.record_number || ''
         editForm.value.memo = customer.memo || ''
         if (typeof editForm.value.is_existing_customer === 'undefined') editForm.value.is_existing_customer = true
-        if (!editForm.value.preferred_category) editForm.value.preferred_category = 'barber'
+        editForm.value.preferred_category = customer.preferred_category ?? null
 
         // 新設フィールド（発信写録項目）のフォールバック
         editForm.value.phone_number2 = formatPhoneNumber(customer.phone_number2 || '')
@@ -161,7 +161,7 @@ const openEditModal = async (customer?: Customer) => {
             address1: '',
             address2: '',
             memo: '',
-            preferred_category: 'barber',
+            preferred_category: null,
             is_existing_customer: true
         }
         history.value = []
@@ -360,7 +360,13 @@ onMounted(() => { fetchCustomers() })
                                     <span v-else style="color: #bbb;">-</span>
                                 </td>
                                 <td>{{ cust.is_existing_customer ? '既存' : '新規' }}</td>
-                                <td>{{ cust.preferred_category === 'beauty' ? '美容' : (cust.preferred_category === 'student' ? '学生' : (cust.preferred_category === 'chiro' ? 'カイロ' : '理容')) }}</td>
+                                <td>
+                                    <span v-if="cust.preferred_category === 'beauty'">美容</span>
+                                    <span v-else-if="cust.preferred_category === 'barber'">理容</span>
+                                    <span v-else-if="cust.preferred_category === 'student'">学生</span>
+                                    <span v-else-if="cust.preferred_category === 'chiro'">カイロ</span>
+                                    <span v-else style="color: #bbb;">未設定</span>
+                                </td>
                                 <td class="memo-cell">{{ cust.memo }}</td>
                                 <td class="actions-cell">
                                     <button @click="openEditModal(cust)" class="edit-btn">詳細・履歴</button>
@@ -455,6 +461,7 @@ onMounted(() => { fetchCustomers() })
                         <div class="form-group">
                             <label>よく利用するメニュー</label>
                             <div class="radio-group">
+                                <label><input type="radio" :value="null" v-model="editForm.preferred_category"> 未設定</label>
                                 <label><input type="radio" value="barber" v-model="editForm.preferred_category"> 理容</label>
                                 <label><input type="radio" value="beauty" v-model="editForm.preferred_category"> 美容</label>
                                 <label><input type="radio" value="student" v-model="editForm.preferred_category"> 学生（中学まで）</label>

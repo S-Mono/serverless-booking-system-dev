@@ -191,6 +191,7 @@ interface ParsedCustomer {
   address_full: string
   company_name: string
   customer_type: string
+  preferred_category: 'barber' | 'beauty' | null
   email: string
   rank: string
   name_kanji: string
@@ -402,6 +403,15 @@ const processFile = async (file: File) => {
       if (m2) memoParts.push(m2)
       if (m3) memoParts.push(m3)
 
+      const combinedMemo = memoParts.join('\n')
+
+      // 🌟 よく使うサービスの自動判定
+      // メモに「美容」または「婦人」が含まれる場合は 'beauty'、それ以外は null
+      let preferredCategory: 'barber' | 'beauty' | null = null
+      if (/美容|婦人/.test(combinedMemo)) {
+        preferredCategory = 'beauty'
+      }
+
       const postalDisplay = postalCode ? (postalCode.length === 7 ? `〒${postalCode.slice(0, 3)}-${postalCode.slice(3)} ` : `〒${postalCode} `) : ''
       const addressFull = `${postalDisplay}${prefecture}${address1} ${address2}`.trim()
 
@@ -436,7 +446,8 @@ const processFile = async (file: File) => {
         rank,
         name_kanji: nameKanji,
         name_kana: nameKana,
-        memo: memoParts.join('\n'),
+        memo: combinedMemo,
+        preferred_category: preferredCategory,
         isSkip,
         statusText
       })
@@ -478,7 +489,7 @@ const executeImport = async () => {
           email: item.email,
           rank: item.rank,
           memo: item.memo,
-          preferred_category: 'barber',
+          preferred_category: item.preferred_category,
           is_existing_customer: true,
           created_at: Timestamp.now(),
           deleted_at: null
