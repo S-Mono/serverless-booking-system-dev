@@ -19,20 +19,20 @@
           />
           <div class="drop-text">
             <span class="upload-icon">📄</span>
-            <p>発信写録から出力したCSVファイルをドラッグ＆ドロップ</p>
+            <p>発信写録から出力したCSV / TXTファイルをドラッグ＆ドロップ</p>
             <button type="button" class="select-file-btn" @click="triggerFileInput">
               ファイルを選択
             </button>
           </div>
         </div>
-        <p class="hint">※ Shift-JIS / UTF-8 の両形式に自動対応しています。</p>
+        <p class="hint">※ ヘッダー行の項目名を自動判別し、Shift-JIS / UTF-8 に両対応しています。</p>
       </div>
 
       <!-- ステップ2: プレビュー確認 -->
       <div v-else-if="step === 'preview'" class="modal-body preview-body">
         <div class="summary-box">
           <span>読み込み総数: <strong>{{ parsedList.length }}</strong> 件</span>
-          <span class="badge-new">新規登録対象: <strong>{{ validList.length }}</strong> 件</span>
+          <span class="badge-new">登録対象: <strong>{{ validList.length }}</strong> 件</span>
           <span v-if="skipCount > 0" class="badge-skip">除外（重複・番号なし）: {{ skipCount }} 件</span>
         </div>
 
@@ -44,7 +44,7 @@
                 <th>電話番号</th>
                 <th>氏名（漢字）</th>
                 <th>氏名（カナ）</th>
-                <th>住所</th>
+                <th>住所（郵便番号・住所1・2）</th>
                 <th>メモ</th>
               </tr>
             </thead>
@@ -62,8 +62,12 @@
                 <td class="font-mono">{{ item.phone_formatted }}</td>
                 <td>{{ item.name_kanji || '-' }}</td>
                 <td>{{ item.name_kana || '-' }}</td>
-                <td class="text-truncate">{{ item.address_full || '-' }}</td>
-                <td class="text-truncate">{{ item.memo || '-' }}</td>
+                <td class="text-truncate" :title="item.address_full">
+                  {{ item.address_full || '-' }}
+                </td>
+                <td class="text-truncate" :title="item.memo">
+                  {{ item.memo || '-' }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -169,11 +173,12 @@ const toFullKana = (str: string) => {
   return res
 }
 
-// ダブルクォーテーション考慮のCSV行パーサー
-const parseCsvLine = (text: string): string[] => {
+// クォートや余分な空白を除去するパーサー（カンマまたはタブ対応）
+const parseLine = (text: string, delimiter: string = ','): string[] => {
   const result: string[] = []
   let field = ''
   let inQuotes = false
+
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
     if (c === '"') {
@@ -183,15 +188,19 @@ const parseCsvLine = (text: string): string[] => {
       } else {
         inQuotes = !inQuotes
       }
-    } else if (c === ',' && !inQuotes) {
-      result.push(field.trim())
+    } else if (c === delimiter && !inQuotes) {
+      result.push(cleanField(field))
       field = ''
     } else {
       field += c
     }
   }
-  result.push(field.trim())
+  result.push(cleanField(field))
   return result
+}
+
+const cleanField = (val: string) => {
+  return val.trim().replace(/^["']|["']$/g, '').trim()
 }
 
 const handleFileDrop = (e: DragEvent) => {
@@ -216,50 +225,116 @@ const processFile = async (file: File) => {
       text = decoder.decode(buffer)
     }
 
+    // 既存の電話番号（主・副の両方）を取得して重複除外リストを作成
     const customersSnap = await getDocs(collection(db, 'customers'))
     const existingPhones = new Set<string>()
-    customersSnap.docs.forEach(doc => {
-      const p1 = (doc.data().phone_number || '').replace(/\D/g, '')
-      const p2 = (doc.data().phone_number2 || '').replace(/\D/g, '')
+    customersSnap.docs.forEach(d => {
+      const data = d.data()
+      const p1 = (data.phone_number || '').replace(/\D/g, '')
+      const p2 = (data.phone_number2 || '').replace(/\D/g, '')
       if (p1) existingPhones.add(p1)
       if (p2) existingPhones.add(p2)
     })
 
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-    if (lines.length <= 1) {
-      dialog.alert('有効なデータ行が見つかりませんでした。')
+    if (lines.length === 0) {
+      dialog.alert('ファイルが空です。')
       return
     }
 
+    // カンマ区切りかタブ区切りかを自動判定
+    const firstLine = lines[0] || ''
+    const delimiter = (firstLine.split('\t').length > firstLine.split(',').length) ? '\t' : ','
+
+    // 1行目のヘッダーから各項目の列位置（インデックス）を動的に検索
+    const firstCols = parseLine(firstLine, delimiter)
+    const findIndex = (keywords: string[]) => {
+      return firstCols.findIndex(col => keywords.some(k => col.includes(k)))
+    }
+
+    const hasHeader = findIndex(['電話', '名前', 'カナ', '住所', '郵便']) !== -1
+
+    // デフォルト（固定位置）のインデックス
+    let idxMap = {
+      phone1: 0,
+      phone2: 1,
+      postal: 2,
+      prefecture: 3,
+      address1: 4,
+      address2: 5,
+      companyKana: 7,
+      companyKanji: 8,
+      nameKana: 9,
+      nameKanji: 10,
+      customerType: 11,
+      memo1: 12,
+      memo2: 13,
+      memo3: 14,
+      email: 15,
+      rank: 16
+    }
+
+    // ヘッダー行が存在する場合は動的インデックスを採用
+    if (hasHeader) {
+      idxMap = {
+        phone1: findIndex(['電話番号１', '電話番号1', '電話番号', 'TEL1', 'TEL']),
+        phone2: findIndex(['電話番号２', '電話番号2', 'TEL2', '携帯']),
+        postal: findIndex(['郵便番号', '郵便', '〒']),
+        prefecture: findIndex(['都道府県']),
+        address1: findIndex(['住所１', '住所1']),
+        address2: findIndex(['住所２', '住所2']),
+        companyKana: findIndex(['会社名カナ', '法人名カナ']),
+        companyKanji: findIndex(['会社名漢字', '会社名', '法人名']),
+        nameKana: findIndex(['名前カナ', '氏名カナ', 'カナ']),
+        nameKanji: findIndex(['名前漢字', '氏名', 'お名前']),
+        customerType: findIndex(['個人法人区分', '個人法人', '区分']),
+        memo1: findIndex(['登録メモ１', '登録メモ1', 'メモ1']),
+        memo2: findIndex(['登録メモ２', '登録メモ2', 'メモ2']),
+        memo3: findIndex(['登録メモ３', '登録メモ3', 'メモ3']),
+        email: findIndex(['メールアドレス', 'メール', 'mail']),
+        rank: findIndex(['ランク'])
+      }
+    }
+
+    const startRow = hasHeader ? 1 : 0
     const seenInFile = new Set<string>()
     const parsed: ParsedCustomer[] = []
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = parseCsvLine(lines[i] || '')
-      if (cols.length < 11) continue
+    for (let i = startRow; i < lines.length; i++) {
+      const cols = parseLine(lines[i] || '', delimiter)
+      if (cols.length <= 1) continue
 
-      const rawPhone1 = cols[0] || ''
-      const rawPhone2 = cols[1] || ''
+      const getCol = (idx: number) => (idx !== -1 && idx < cols.length) ? cols[idx]! : ''
+
+      const rawPhone1 = getCol(idxMap.phone1)
+      const rawPhone2 = getCol(idxMap.phone2)
       const phoneRaw = (rawPhone1 || rawPhone2).replace(/\D/g, '')
 
-      const nameKanji = (cols[10] || cols[8] || '').trim()
-      const nameKana = toFullKana((cols[9] || cols[7] || '').trim())
+      const nameKanji = getCol(idxMap.nameKanji) || getCol(idxMap.companyKanji)
+      const nameKana = toFullKana(getCol(idxMap.nameKana) || getCol(idxMap.companyKana))
 
-      const postalCode = (cols[2] || '').replace(/\D/g, '')
-      const prefecture = (cols[3] || '').trim()
-      const address1 = (cols[4] || '').trim()
-      const address2 = (cols[5] || '').trim()
-      const companyName = (cols[8] || '').trim()
-      const customerType = (cols[11] || '個人').trim()
-      const email = (cols[15] || '').trim()
-      const rank = (cols[16] || '').trim()
+      // 住所情報の取得
+      const postalCode = getCol(idxMap.postal).replace(/\D/g, '')
+      const prefecture = getCol(idxMap.prefecture)
+      const address1 = getCol(idxMap.address1)
+      const address2 = getCol(idxMap.address2)
+      const companyName = getCol(idxMap.companyKanji)
+      const customerType = getCol(idxMap.customerType) || '個人'
+      const email = getCol(idxMap.email)
+      const rank = getCol(idxMap.rank)
 
+      // メモ1〜3の結合
       const memoParts: string[] = []
-      if (cols[12]) memoParts.push(cols[12].trim())
-      if (cols[13]) memoParts.push(cols[13].trim())
-      if (cols[14]) memoParts.push(cols[14].trim())
+      const m1 = getCol(idxMap.memo1)
+      const m2 = getCol(idxMap.memo2)
+      const m3 = getCol(idxMap.memo3)
+      if (m1) memoParts.push(m1)
+      if (m2) memoParts.push(m2)
+      if (m3) memoParts.push(m3)
 
-      const addressFull = [prefecture, address1, address2].filter(Boolean).join(' ')
+      // プレビュー表示用住所
+      const postalDisplay = postalCode ? (postalCode.length === 7 ? `〒${postalCode.slice(0, 3)}-${postalCode.slice(3)} ` : `〒${postalCode} `) : ''
+      const addressFull = `${postalDisplay}${prefecture}${address1} ${address2}`.trim()
 
       let isSkip = false
       let statusText = '新規'
@@ -282,14 +357,14 @@ const processFile = async (file: File) => {
         phone_formatted: rawPhone1 || rawPhone2,
         phone_number2: rawPhone1 ? rawPhone2.replace(/\D/g, '') : '',
         postal_code: postalCode,
-        prefecture: prefecture,
-        address1: address1,
-        address2: address2,
+        prefecture,
+        address1,
+        address2,
         address_full: addressFull,
         company_name: companyName,
         customer_type: customerType,
-        email: email,
-        rank: rank,
+        email,
+        rank,
         name_kanji: nameKanji,
         name_kana: nameKana,
         memo: memoParts.join('\n'),
@@ -342,7 +417,7 @@ const executeImport = async () => {
       await batch.commit()
     }
 
-    await dialog.alert(`${total} 件の顧客データをインポートしました！`)
+    await dialog.alert(`${total} 件の顧客データを正常にインポートしました！`)
     emit('imported')
     close()
   } catch (err) {
@@ -380,7 +455,7 @@ const close = () => {
   padding: 1.5rem;
   border-radius: 10px;
   width: 90%;
-  max-width: 820px;
+  max-width: 860px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -484,7 +559,7 @@ const close = () => {
 
 .preview-table th,
 .preview-table td {
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid #eee;
   text-align: left;
 }
@@ -518,7 +593,7 @@ const close = () => {
 }
 
 .text-truncate {
-  max-width: 200px;
+  max-width: 220px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
