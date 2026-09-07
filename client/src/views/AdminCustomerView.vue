@@ -5,6 +5,7 @@ import { db } from '../lib/firebase'
 import { collection, getDocs, doc, query, where, orderBy, Timestamp, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
+import CsvImportModal from '@/components/CsvImportModal.vue'
 
 const dialog = useDialogStore()
 const router = useRouter()
@@ -14,12 +15,24 @@ const functions = getFunctions(undefined, 'asia-northeast1')
 interface Customer {
     id: string
     name_kana: string
+    name_kanji?: string
     phone_number: string
+    phone_number2?: string
     record_number?: string
+    customer_type?: string // '個人' | '法人'
+    company_name?: string
+    postal_code?: string
+    prefecture?: string
+    address1?: string
+    address2?: string
+    email?: string
+    rank?: string
     memo?: string
     preferred_category?: 'barber' | 'beauty' | 'student' | 'chiro'
     // true => 既存顧客, false => 新規顧客
     is_existing_customer?: boolean
+    created_at?: Timestamp
+    updated_at?: Timestamp
     deleted_at?: Timestamp | null
 }
 
@@ -46,6 +59,15 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const isChangingPassword = ref(false)
 const targetCustomerId = ref('')
+
+const showImportModal = ref(false)
+
+// インポート完了時の再取得
+const handleImported = async () => {
+  if (typeof fetchCustomers === 'function') {
+    await fetchCustomers()
+  }
+}
 
 const fetchCustomers = async () => {
     loading.value = true
@@ -102,57 +124,93 @@ const openEditModal = async (customer?: Customer) => {
     if (customer) {
         isEditing.value = true
         editForm.value = JSON.parse(JSON.stringify(customer))
-        // 電話番号をフォーマットして表示
+        
+        // 既存フィールドのフォールバック
+        editForm.value.name_kanji = customer.name_kanji || ''
+        editForm.value.name_kana = customer.name_kana || ''
         editForm.value.phone_number = formatPhoneNumber(customer.phone_number || '')
-        // 編集時、is_existing_customer が存在しないケースに備えてデフォルトを付与
+        editForm.value.record_number = customer.record_number || ''
+        editForm.value.memo = customer.memo || ''
         if (typeof editForm.value.is_existing_customer === 'undefined') editForm.value.is_existing_customer = true
         if (!editForm.value.preferred_category) editForm.value.preferred_category = 'barber'
+
+        // 新設フィールド（発信写録項目）のフォールバック
+        editForm.value.phone_number2 = formatPhoneNumber(customer.phone_number2 || '')
+        editForm.value.customer_type = customer.customer_type || '個人'
+        editForm.value.company_name = customer.company_name || ''
+        editForm.value.postal_code = customer.postal_code || ''
+        editForm.value.prefecture = customer.prefecture || ''
+        editForm.value.address1 = customer.address1 || ''
+        editForm.value.address2 = customer.address2 || ''
+
         await fetchHistory(customer.id)
     } else {
         isEditing.value = false
-        editForm.value = { id: '', name_kana: '', phone_number: '', record_number: '', memo: '', preferred_category: 'barber' }
+        // 新規登録時の初期値
+        editForm.value = {
+            id: '',
+            name_kanji: '',
+            name_kana: '',
+            phone_number: '',
+            phone_number2: '',
+            record_number: '',
+            customer_type: '個人',
+            company_name: '',
+            postal_code: '',
+            prefecture: '',
+            address1: '',
+            address2: '',
+            memo: '',
+            preferred_category: 'barber',
+            is_existing_customer: true
+        }
         history.value = []
     }
     showModal.value = true
 }
 
 const saveCustomer = async () => {
-    if (!editForm.value.name_kana) return dialog.alert('名前（カナ）は必須です')
+  if (!editForm.value.name_kana) {
+    dialog.alert('お名前（カナ）は必須です')
+    return
+  }
 
-    // カルテ番号のバリデーション（半角英数字とハイフンのみ許容）
-    if (editForm.value.record_number && !/^[A-Za-z0-9-]*$/.test(editForm.value.record_number)) {
-        return dialog.alert('カルテ番号は半角英数字とハイフンのみ使用できます')
+  const payload = {
+    name_kanji: (editForm.value.name_kanji || '').trim(),
+    name_kana: editForm.value.name_kana.trim(),
+    phone_number: (editForm.value.phone_number || '').replace(/\D/g, ''),
+    phone_number2: (editForm.value.phone_number2 || '').replace(/\D/g, ''),
+    record_number: (editForm.value.record_number || '').trim(),
+    customer_type: editForm.value.customer_type || '個人',
+    company_name: (editForm.value.company_name || '').trim(),
+    postal_code: (editForm.value.postal_code || '').replace(/\D/g, ''),
+    prefecture: (editForm.value.prefecture || '').trim(),
+    address1: (editForm.value.address1 || '').trim(),
+    address2: (editForm.value.address2 || '').trim(),
+    preferred_category: editForm.value.preferred_category,
+    is_existing_customer: editForm.value.is_existing_customer,
+    memo: (editForm.value.memo || '').trim(),
+    updated_at: Timestamp.now()
+  }
+
+  try {
+    if (isEditing.value && editForm.value.id) {
+      await updateDoc(doc(db, 'customers', editForm.value.id), payload)
+      dialog.alert('顧客情報を更新しました')
+    } else {
+      await addDoc(collection(db, 'customers'), {
+        ...payload,
+        created_at: Timestamp.now(),
+        deleted_at: null
+      })
+      dialog.alert('新規顧客を登録しました')
     }
-
-    // 電話番号からハイフンを除去して保存
-    const phoneNumberToSave = editForm.value.phone_number.replace(/[^0-9]/g, '')
-
-    try {
-        if (isEditing.value) {
-            await updateDoc(doc(db, 'customers', editForm.value.id), {
-                name_kana: editForm.value.name_kana,
-                phone_number: phoneNumberToSave,
-                record_number: editForm.value.record_number || '',
-                memo: editForm.value.memo || '',
-                preferred_category: editForm.value.preferred_category,
-                is_existing_customer: editForm.value.is_existing_customer ?? true
-            })
-        } else {
-            await addDoc(collection(db, 'customers'), {
-                name_kana: editForm.value.name_kana,
-                phone_number: phoneNumberToSave,
-                record_number: editForm.value.record_number || '',
-                memo: editForm.value.memo || '',
-                preferred_category: editForm.value.preferred_category,
-                is_existing_customer: editForm.value.is_existing_customer ?? true,
-                created_at: Timestamp.now(),
-                deleted_at: null
-            })
-        }
-        dialog.alert('保存しました')
-        showModal.value = false
-        fetchCustomers()
-    } catch (e) { console.error(e); dialog.alert('保存失敗') }
+    showModal.value = false
+    await fetchCustomers()
+  } catch (e) {
+    console.error(e)
+    dialog.alert('保存に失敗しました')
+  }
 }
 
 const deleteCustomer = async (id: string) => {
@@ -273,6 +331,9 @@ onMounted(() => { fetchCustomers() })
                             placeholder="名前(カナ) または 電話番号で検索..." />
                     </div>
                     <button @click="openEditModal()" class="add-btn">＋ 顧客登録</button>
+                    <button class="export-btn" @click="showImportModal = true">
+                    📥 発信写録CSV取込
+                    </button>
                 </div>
 
                 <div class="table-container">
@@ -281,6 +342,7 @@ onMounted(() => { fetchCustomers() })
                             <tr>
                                 <th>お名前 (カナ)</th>
                                 <th>電話番号</th>
+                                <th>住所</th>
                                 <th>種別</th>
                                 <th>よく利用する</th>
                                 <th>メモ</th>
@@ -291,6 +353,12 @@ onMounted(() => { fetchCustomers() })
                             <tr v-for="cust in filteredCustomers" :key="cust.id">
                                 <td class="name-cell">{{ cust.name_kana }}</td>
                                 <td>{{ formatPhoneNumber(cust.phone_number || '') }}</td>
+                                <td style="font-size: 0.85rem; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    <span v-if="cust.address1 || cust.prefecture">
+                                        {{ cust.prefecture || '' }}{{ cust.address1 || '' }} {{ cust.address2 || '' }}
+                                    </span>
+                                    <span v-else style="color: #bbb;">-</span>
+                                </td>
                                 <td>{{ cust.is_existing_customer ? '既存' : '新規' }}</td>
                                 <td>{{ cust.preferred_category === 'beauty' ? '美容' : (cust.preferred_category === 'student' ? '学生' : (cust.preferred_category === 'chiro' ? 'カイロ' : '理容')) }}</td>
                                 <td class="memo-cell">{{ cust.memo }}</td>
@@ -316,54 +384,103 @@ onMounted(() => { fetchCustomers() })
                 </div>
                 <div class="modal-body">
                     <div class="form-section">
+                        <!-- 氏名（漢字・カナ） -->
                         <div class="form-row">
+                            <div class="form-group">
+                                <label>お名前 (漢字)</label>
+                                <input type="text" v-model="editForm.name_kanji" placeholder="山田 太郎" />
+                            </div>
                             <div class="form-group">
                                 <label>お名前 (カナ) <span class="req">*</span></label>
                                 <input type="text" v-model="editForm.name_kana" placeholder="ヤマダ タロウ" />
                             </div>
+                        </div>
+
+                        <!-- 電話番号（主・予備） -->
+                        <div class="form-row">
                             <div class="form-group">
-                                <label>電話番号</label>
+                                <label>電話番号１（主）</label>
                                 <input type="tel" v-model="editForm.phone_number"
                                     @input="(e) => editForm.phone_number = formatPhoneNumber((e.target as HTMLInputElement).value)"
                                     placeholder="090-1234-5678" />
                             </div>
+                            <div class="form-group">
+                                <label>電話番号２（予備）</label>
+                                <input type="tel" v-model="editForm.phone_number2"
+                                    @input="(e) => editForm.phone_number2 = formatPhoneNumber((e.target as HTMLInputElement).value)"
+                                    placeholder="011-123-4567" />
+                            </div>
+                        </div>
+
+                        <!-- カルテ番号・個人法人区分・会社名 -->
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label>カルテ番号</label>
+                                <input type="text" v-model="editForm.record_number" placeholder="例: 12345" />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>個人 / 法人</label>
+                                <select v-model="editForm.customer_type">
+                                    <option value="個人">個人</option>
+                                    <option value="法人">法人</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 2;">
+                                <label>会社名</label>
+                                <input type="text" v-model="editForm.company_name" placeholder="例: 株式会社〇〇" />
+                            </div>
+                        </div>
+
+                        <!-- 住所情報（郵便番号・都道府県・市区町村・建物名） -->
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label>郵便番号</label>
+                                <input type="text" v-model="editForm.postal_code" placeholder="0060000" maxlength="8" />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>都道府県</label>
+                                <input type="text" v-model="editForm.prefecture" placeholder="北海道" />
+                            </div>
+                            <div class="form-group" style="flex: 2;">
+                                <label>市区町村・番地</label>
+                                <input type="text" v-model="editForm.address1" placeholder="札幌市手稲区..." />
+                            </div>
                         </div>
                         <div class="form-group">
-                            <label>カルテ番号</label>
-                            <input type="text" v-model="editForm.record_number" placeholder="例: 12345" />
+                            <label>建物名・部屋番号</label>
+                            <input type="text" v-model="editForm.address2" placeholder="〇〇マンション 101" />
                         </div>
+
+                        <!-- よく利用するメニュー -->
                         <div class="form-group">
                             <label>よく利用するメニュー</label>
                             <div class="radio-group">
-                                <label><input type="radio" value="barber" v-model="editForm.preferred_category">
-                                    理容</label>
-                                <label><input type="radio" value="beauty" v-model="editForm.preferred_category">
-                                    美容</label>
-                                <label><input type="radio" value="student" v-model="editForm.preferred_category">
-                                    学生（中学まで）</label>
-                                <label><input type="radio" value="chiro" v-model="editForm.preferred_category">
-                                    カイロ</label>
+                                <label><input type="radio" value="barber" v-model="editForm.preferred_category"> 理容</label>
+                                <label><input type="radio" value="beauty" v-model="editForm.preferred_category"> 美容</label>
+                                <label><input type="radio" value="student" v-model="editForm.preferred_category"> 学生（中学まで）</label>
+                                <label><input type="radio" value="chiro" v-model="editForm.preferred_category"> カイロ</label>
                             </div>
                         </div>
+
+                        <!-- 顧客タイプ -->
                         <div class="form-group">
                             <label>顧客タイプ</label>
                             <div class="radio-group">
-                                <label><input type="radio" :value="true" v-model="editForm.is_existing_customer">
-                                    既存顧客</label>
-                                <label><input type="radio" :value="false" v-model="editForm.is_existing_customer">
-                                    新規顧客</label>
+                                <label><input type="radio" :value="true" v-model="editForm.is_existing_customer"> 既存顧客</label>
+                                <label><input type="radio" :value="false" v-model="editForm.is_existing_customer"> 新規顧客</label>
                             </div>
                         </div>
+
+                        <!-- 顧客メモ -->
                         <div class="form-group">
                             <label>顧客メモ</label>
                             <textarea v-model="editForm.memo" placeholder="特記事項など"></textarea>
                         </div>
+
                         <div class="modal-actions">
                             <button @click="saveCustomer" class="save-btn">保存する</button>
-                            <button v-if="isEditing" @click="goToRecords(editForm.id)" class="records-btn">📋
-                                カルテを見る</button>
-                            <button v-if="isEditing" @click="openPasswordModal(editForm.id)" class="password-btn">🔒
-                                パスワード変更</button>
+                            <button v-if="isEditing" @click="goToRecords(editForm.id)" class="records-btn">📋 カルテを見る</button>
+                            <button v-if="isEditing" @click="openPasswordModal(editForm.id)" class="password-btn">🔒 パスワード変更</button>
                         </div>
                     </div>
                     <div v-if="isEditing" class="history-section">
@@ -414,6 +531,7 @@ onMounted(() => { fetchCustomers() })
             </div>
         </div>
     </div>
+    <CsvImportModal v-model="showImportModal" @imported="handleImported" />
 </template>
 
 <style scoped>
@@ -814,21 +932,20 @@ textarea {
 }
 
 /* 👇 ステータス色分け */
+/* 確: 緑 */
 .status-confirmed {
     background: #27ae60;
 }
 
-/* 確: 緑 */
+/* 仮: 紫 */
 .status-pending {
     background: #9b59b6;
 }
 
-/* 仮: 紫 */
+/* 済: グレー */
 .status-done {
     background: #7f8c8d;
 }
-
-/* 済: グレー */
 
 .no-history {
     color: #999;
