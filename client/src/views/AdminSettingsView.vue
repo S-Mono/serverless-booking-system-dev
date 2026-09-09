@@ -44,6 +44,21 @@ const weekdays = ['日', '月', '火', '水', '木', '金', '土']
 const tempClosedDate = ref('')
 const weeklyClosedDays = computed(() => deriveHolidayWeekdays(config.value.weekday_business_hours))
 
+// カテゴリ説明文の編集対象（固定カテゴリ）
+const editableCategories = [
+  { id: 'barber', label: '💈 理容' },
+  { id: 'beauty', label: '💇‍♀️ 美容' },
+  { id: 'student', label: '🎓 学生' },
+  { id: 'chiro', label: '💆‍♂️ カイロ' }
+] as const
+
+/** カテゴリ説明文の取得・更新用（v-model から参照） */
+const getCategoryDescription = (id: string) => config.value.category_descriptions?.[id] ?? ''
+const setCategoryDescription = (id: string, value: string) => {
+  if (!config.value.category_descriptions) config.value.category_descriptions = {}
+  config.value.category_descriptions[id] = value
+}
+
 // --- データ取得 ---
 const fetchData = async () => {
   loading.value = true
@@ -75,7 +90,8 @@ const saveConfig = async () => {
       business_hours: businessHours,
       weekday_business_hours: weekdayBusinessHours,
       tax_rate: Number(config.value.tax_rate),
-      auto_confirm_pending_reservations: !!config.value.auto_confirm_pending_reservations
+      auto_confirm_pending_reservations: !!config.value.auto_confirm_pending_reservations,
+      category_descriptions: { ...(config.value.category_descriptions ?? {}) }
     })
 
     config.value = normalizeShopConfig({
@@ -182,6 +198,22 @@ onMounted(() => { fetchData() })
             </div>
             <div class="action-row">
               <button @click="saveConfig" class="save-main-btn">税率を保存</button>
+            </div>
+          </div>
+
+          <div class="side-card">
+            <h3>🏷️ カテゴリ説明文</h3>
+            <p class="side-desc">顧客向け予約画面の各カテゴリタブ下に表示される説明文です。空欄の場合は既定の文が表示されます。</p>
+            <div class="category-desc-list">
+              <div v-for="cat in editableCategories" :key="cat.id" class="input-group">
+                <label>{{ cat.label }}</label>
+                <input type="text" :value="getCategoryDescription(cat.id)"
+                  @input="setCategoryDescription(cat.id, ($event.target as HTMLInputElement).value)"
+                  placeholder="例：ご希望のメニューを選択してください" />
+              </div>
+            </div>
+            <div class="action-row">
+              <button @click="saveConfig" class="save-main-btn">説明文を保存</button>
             </div>
           </div>
         </aside>

@@ -17,6 +17,8 @@ export interface ShopConfigData {
   time_slot_interval: number
   tax_rate: number
   auto_confirm_pending_reservations?: boolean
+  /** カテゴリID（barber/beauty等）→ 説明文。顧客向け画面のカテゴリ説明に使用 */
+  category_descriptions?: Record<string, string>
 }
 
 export const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -132,8 +134,19 @@ export const normalizeShopConfig = (value: unknown): ShopConfigData => {
       ? source.time_slot_interval
       : DEFAULT_TIME_SLOT_INTERVAL,
     tax_rate: typeof source.tax_rate === 'number' ? source.tax_rate : DEFAULT_TAX_RATE,
-    auto_confirm_pending_reservations: typeof source.auto_confirm_pending_reservations === 'boolean' ? source.auto_confirm_pending_reservations : false
+    auto_confirm_pending_reservations: typeof source.auto_confirm_pending_reservations === 'boolean' ? source.auto_confirm_pending_reservations : false,
+    category_descriptions: normalizeCategoryDescriptions(source.category_descriptions)
   }
+}
+
+/** カテゴリ説明文の正規化（文字列キー・文字列値のみ採用） */
+const normalizeCategoryDescriptions = (value: unknown): Record<string, string> => {
+  const source = (value ?? {}) as Record<string, unknown>
+  const result: Record<string, string> = {}
+  for (const [key, val] of Object.entries(source)) {
+    if (typeof val === 'string') result[key] = val
+  }
+  return result
 }
 
 export const getDefaultShopConfig = () => normalizeShopConfig({})

@@ -9,6 +9,7 @@ import {
   deleteDoc,
   getDoc,
   writeBatch,
+  Timestamp,
   query,
   where
 } from 'firebase/firestore'
@@ -20,6 +21,7 @@ export interface Menu {
   price_with_tax: number
   duration_min: number
   available_staff_ids: string[]
+  tags: string[]
   description?: string
   category: 'barber' | 'beauty' | 'student' | 'chiro'
   order_priority: number
@@ -31,6 +33,12 @@ export interface Staff {
   code?: string
 }
 
+export interface MenuTag {
+  id: string
+  name: string
+  order_priority: number
+}
+
 export interface UseMenuOptions {
   onError?: (error: any) => void
 }
@@ -38,6 +46,7 @@ export interface UseMenuOptions {
 export function useMenu(options?: UseMenuOptions) {
   const menus = ref<Menu[]>([])
   const staffs = ref<Staff[]>([])
+  const menuTags = ref<MenuTag[]>([])
   const isLoading = ref(false)
   const isOperating = ref(false)
   const taxRate = ref(10)
@@ -55,10 +64,11 @@ export function useMenu(options?: UseMenuOptions) {
   const fetchData = async (): Promise<void> => {
     isLoading.value = true
     try {
-      const [menuSnap, staffSnap, configSnap] = await Promise.all([
+      const [menuSnap, staffSnap, configSnap, tagSnap] = await Promise.all([
         getDocs(collection(db, 'menus')),
         getDocs(collection(db, 'staffs')),
-        getDoc(doc(db, 'shop_config', 'default_config'))
+        getDoc(doc(db, 'shop_config', 'default_config')),
+        getDocs(collection(db, 'menu_tags'))
       ])
 
       menus.value = menuSnap.docs
@@ -66,7 +76,8 @@ export function useMenu(options?: UseMenuOptions) {
           id: doc.id,
           ...doc.data(),
           price_with_tax: doc.data().price_with_tax ?? Math.ceil(doc.data().price * 1.1),
-          order_priority: doc.data().order_priority ?? 999
+          order_priority: doc.data().order_priority ?? 999,
+          tags: doc.data().tags ?? []
         }))
         .sort((a: any, b: any) => a.order_priority - b.order_priority) as Menu[]
 
@@ -74,6 +85,10 @@ export function useMenu(options?: UseMenuOptions) {
         id: doc.id,
         ...doc.data()
       })) as Staff[]
+
+      menuTags.value = tagSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuTag[]
 
       if (configSnap.exists()) {
         taxRate.value = configSnap.data().tax_rate ?? 10
@@ -112,6 +127,7 @@ export function useMenu(options?: UseMenuOptions) {
         price_with_tax: menu.price_with_tax,
         duration_min: menu.duration_min,
         available_staff_ids: menu.available_staff_ids,
+        tags: menu.tags ?? [],
         description: menu.description || '',
         category: menu.category,
         order_priority: Number(menu.order_priority)
@@ -196,7 +212,7 @@ export function useMenu(options?: UseMenuOptions) {
         const line: string = lines[i]!.trim()
         if (!line || line.startsWith('メニュー名')) continue
 
-        const [title, priceInStr, durationStr, catStr, orderStr, desc, staffCodesStr] = line.split(',')
+        const [title, priceInStr, durationStr, catStr, orderStr, desc, staffCodesStr, tagNamesStr] = line.split(',')
 
         if (!title || !priceInStr) continue
 
@@ -210,6 +226,25 @@ export function useMenu(options?: UseMenuOptions) {
           .filter(s => s.code && targetCodes.includes(s.code))
           .map(s => s.id)
 
+        // タグ名 → タグID 変換（未登録のタグ名は自動作成）
+        const targetTagNames = tagNamesStr ? tagNamesStr.split('/').map(n => n.trim()).filter(n => n) : []
+        const tagIds: string[] = []
+        for (const tagName of targetTagNames) {
+          const existing = menuTags.value.find(t => t.name === tagName)
+          if (existing) {
+            tagIds.push(existing.id)
+          } else {
+            const newTagRef = doc(collection(db, 'menu_tags'))
+            batch.set(newTagRef, {
+              name: tagName,
+              order_priority: 999,
+              created_at: Timestamp.now()
+            })
+            menuTags.value.push({ id: newTagRef.id, name: tagName, order_priority: 999 })
+            tagIds.push(newTagRef.id)
+          }
+        }
+
         const newDocRef = doc(collection(db, 'menus'))
         batch.set(newDocRef, {
           title,
@@ -219,6 +254,7 @@ export function useMenu(options?: UseMenuOptions) {
           category,
           description: desc || '',
           available_staff_ids: staffIds,
+          tags: tagIds,
           order_priority: orderPriority
         })
         count++
@@ -243,9 +279,79 @@ export function useMenu(options?: UseMenuOptions) {
     return staffs.value.find(s => s.id === staffId)?.name || staffId
   }
 
+  /**
+   * タグ名を取得
+   */
+  const getTagName = (tagId: string): string => {
+    return menuTags.value.find(t => t.id === tagId)?.name || tagId
+  }
+
+  /**
+   * タグを保存（新規追加または改名）
+   */
+  const saveTag = async (tag: { id?: string; name: string }): Promise<boolean> => {
+    isOperating.value = true
+    try {
+      const name = tag.name.trim()
+      if (!name) return false
+
+      if (tag.id) {
+        await updateDoc(doc(db, 'menu_tags', tag.id), { name })
+      } else {
+        // 同名タグの重複登録を防止
+        if (menuTags.value.some(t => t.name === name)) return false
+        const maxOrder = menuTags.value.reduce((max, t) => Math.max(max, t.order_priority ?? 0), 0)
+        await addDoc(collection(db, 'menu_tags'), {
+          name,
+          order_priority: maxOrder + 10,
+          created_at: Timestamp.now()
+        })
+      }
+
+      await fetchData()
+      return true
+    } catch (error: any) {
+      console.error('[useMenu] Error saving tag:', error)
+      options?.onError?.(error)
+      return false
+    } finally {
+      isOperating.value = false
+    }
+  }
+
+  /**
+   * タグを削除（参照しているメニューからも除去）
+   */
+  const deleteTag = async (tagId: string): Promise<boolean> => {
+    isOperating.value = true
+    try {
+      const batch = writeBatch(db)
+      batch.delete(doc(db, 'menu_tags', tagId))
+
+      // このタグを参照しているメニューの tags 配列から除去
+      const referencing = menus.value.filter(m => (m.tags ?? []).includes(tagId))
+      referencing.forEach(m => {
+        batch.update(doc(db, 'menus', m.id), {
+          tags: m.tags.filter(id => id !== tagId)
+        })
+      })
+
+      await batch.commit()
+      await fetchData()
+      return true
+    } catch (error: any) {
+      console.error('[useMenu] Error deleting tag:', error)
+      options?.onError?.(error)
+      return false
+    } finally {
+      isOperating.value = false
+    }
+  }
+
   return {
     menus,
     staffs,
+    menuTags,
     isLoading,
     isOperating,
     taxRate,
@@ -257,6 +363,9 @@ export function useMenu(options?: UseMenuOptions) {
     deleteMenu,
     deleteCategoryMenus,
     importFromCsv,
-    getStaffName
+    getStaffName,
+    getTagName,
+    saveTag,
+    deleteTag
   }
 }

@@ -33,7 +33,16 @@ interface Reservation {
   customer_id?: string; // 👈 追加
   customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
 }
-interface Menu { id: string; title: string; duration_min: number; price: number }
+interface Menu {
+  id: string; title: string; duration_min: number; price: number
+  price_with_tax?: number
+  category?: 'barber' | 'beauty' | 'student' | 'chiro'
+  available_staff_ids?: string[]
+  tags?: string[]
+  description?: string
+  order_priority?: number
+}
+interface MenuTag { id: string; name: string; order_priority?: number }
 
 const staffs = ref<Staff[]>([])
 // reservations for the left-side list (from selectedDate onward)
@@ -114,6 +123,7 @@ const newCustomer = ref({
 
 // バリデーションエラー管理
 const validationErrors = ref({
+  staff: '',
   start_time: '',
   menus: '',
   customer_name: '',
@@ -131,6 +141,65 @@ const downloadWorkbook = async (workbook: ExcelJS.Workbook, fileName: string) =>
   link.download = fileName
   link.click()
   URL.revokeObjectURL(url)
+}
+
+// --- メニュー選択フィルタ ---
+const menuTags = ref<MenuTag[]>([])
+const menuKeyword = ref('')
+const menuCategoryFilter = ref('')
+const menuTagFilter = ref('')
+const menuStaffFilterEnabled = ref(true)
+
+const menuCategories = [
+  { id: 'barber', label: '理容' },
+  { id: 'beauty', label: '美容' },
+  { id: 'student', label: '学生（中学まで）' },
+  { id: 'chiro', label: 'カイロ' }
+] as const
+
+const getTagName = (tagId: string): string => {
+  return menuTags.value.find(t => t.id === tagId)?.name || ''
+}
+
+// フィルタ条件に一致するメニュー一覧
+const filteredMenus = computed(() => {
+  const keyword = menuKeyword.value.trim().toLowerCase()
+  return menus.value.filter(m => {
+    // キーワード（メニュー名・説明・タグ名の部分一致）
+    if (keyword) {
+      const tagNames = (m.tags ?? []).map(id => getTagName(id)).join(' ')
+      const haystack = `${m.title} ${m.description ?? ''} ${tagNames}`.toLowerCase()
+      if (!haystack.includes(keyword)) return false
+    }
+    // カテゴリ
+    if (menuCategoryFilter.value && (m.category || 'barber') !== menuCategoryFilter.value) return false
+    // タグ
+    if (menuTagFilter.value && !(m.tags ?? []).includes(menuTagFilter.value)) return false
+    // 担当者フィルタ（担当未設定のメニューは無条件で表示）
+    if (menuStaffFilterEnabled.value && newReservation.value.staff_id) {
+      const ids = m.available_staff_ids ?? []
+      if (ids.length > 0 && !ids.includes(newReservation.value.staff_id)) return false
+    }
+    return true
+  })
+})
+
+// カテゴリごとにグルーピング（プルダウンの optgroup 用）
+const groupedFilteredMenus = computed(() => {
+  return menuCategories
+    .map(cat => ({
+      ...cat,
+      menus: filteredMenus.value.filter(m => (m.category || 'barber') === cat.id)
+    }))
+    .filter(g => g.menus.length > 0)
+})
+
+// 予約モーダルを開く際にフィルタをリセット
+const resetMenuFilters = () => {
+  menuKeyword.value = ''
+  menuCategoryFilter.value = ''
+  menuTagFilter.value = ''
+  menuStaffFilterEnabled.value = true
 }
 
 // 選択済みメニューの管理
@@ -313,7 +382,13 @@ const initData = async (fetchMaster = true) => {
       const staffSnap = await getDocs(collection(db, 'staffs'))
       staffs.value = staffSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((s: any) => s.is_working !== false).sort((a: any, b: any) => a.order_priority - b.order_priority) as Staff[]
       const menuSnap = await getDocs(collection(db, 'menus'))
-      menus.value = menuSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Menu[]
+      menus.value = menuSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as Menu[]
+      const tagSnap = await getDocs(collection(db, 'menu_tags'))
+      menuTags.value = tagSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuTag[]
       const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
       if (configSnap.exists()) {
         shopConfig.value = normalizeShopConfig(configSnap.data())
@@ -882,8 +957,9 @@ const handleIncomingCallReservation = async () => {
     editingId.value = null
 
     // 予約フォームの初期化
+    // ※ 担当者は空のまま。予約モーダル冒頭で必須選択させる（案A）
     newReservation.value = {
-      staff_id: staffs.value[0]?.id || '', // デフォルトで最初のスタッフを選択
+      staff_id: '',
       start_time: toLocalISOString(now),
       end_time: '',
       customer_name: customerName || '',
@@ -894,6 +970,7 @@ const handleIncomingCallReservation = async () => {
       note: '【電話受付】'
     }
 
+    resetMenuFilters()
     // 予約作成モーダルを開く（showModalを使用）
     showModal.value = true
 
@@ -971,6 +1048,7 @@ const saveCustomer = async () => {
 const submitReservation = async () => {
   // バリデーションエラーをリセット
   validationErrors.value = {
+    staff: '',
     start_time: '',
     menus: '',
     customer_name: '',
@@ -980,6 +1058,11 @@ const submitReservation = async () => {
 
   // バリデーションチェック
   let hasError = false
+
+  if (!newReservation.value.staff_id) {
+    validationErrors.value.staff = '担当スタッフを選択してください'
+    hasError = true
+  }
 
   if (!newReservation.value.start_time) {
     validationErrors.value.start_time = '開始日時を入力してください'
@@ -1308,7 +1391,9 @@ const openEditModal = async (res: Reservation) => {
     selectedMenuIds: matchedMenuIds,
     note: res.note || ''
   }
-  isEditing.value = true; editingId.value = res.id; showDetailModal.value = false; showModal.value = true
+  isEditing.value = true; editingId.value = res.id; showDetailModal.value = false
+  resetMenuFilters()
+  showModal.value = true
   customerSuggestions.value = []
   showSuggestions.value = false
 }
@@ -1355,6 +1440,7 @@ const onMouseUp = () => {
     end_time: '',
     customer_name: '', customer_phone: '', customer_id: '', record_number: '', selectedMenuIds: [], note: ''
   }
+  resetMenuFilters()
   showModal.value = true; isDragging.value = false; dragStaffId.value = null
 }
 const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
@@ -1985,9 +2071,15 @@ const exportReservationsToExcel = async () => {
           <h3>{{ isEditing ? '予約の編集' : '新規予約 (電話受付)' }}</h3>
           <button class="close-x-btn" @click="showModal = false">×</button>
         </div>
-        <div class="form-group"><label>担当スタッフ</label><select v-model="newReservation.staff_id">
+        <div class="form-group staff-select-group">
+          <label>担当スタッフ <span style="color: #e74c3c;">*</span></label>
+          <select v-model="newReservation.staff_id" :class="{ 'input-error': validationErrors.staff }">
+            <option value="" disabled>担当スタッフを選択してください</option>
             <option v-for="s in staffs" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select></div>
+          </select>
+          <span v-if="validationErrors.staff" class="error-message">{{ validationErrors.staff }}</span>
+          <p v-if="!newReservation.staff_id" class="hint">※ 担当スタッフを選択すると、メニュー候補が担当者で絞り込まれます</p>
+        </div>
         <div class="form-group">
           <label>開始日時 <span style="color: #e74c3c;">*</span></label>
           <input type="datetime-local" v-model="newReservation.start_time"
@@ -2001,12 +2093,33 @@ const exportReservationsToExcel = async () => {
         </div>
         <div class="form-group">
           <label>メニュー <span style="color: #e74c3c;">*</span></label>
+          <div class="menu-filters">
+            <input type="text" v-model="menuKeyword" class="menu-keyword-input"
+              placeholder="🔍 キーワード検索（メニュー名・説明・タグ）">
+            <div class="menu-filter-row">
+              <select v-model="menuCategoryFilter" class="menu-filter-select">
+                <option value="">カテゴリ: 全て</option>
+                <option v-for="cat in menuCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+              </select>
+              <select v-model="menuTagFilter" class="menu-filter-select">
+                <option value="">タグ: 全て</option>
+                <option v-for="tag in menuTags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+              </select>
+              <label class="staff-filter-toggle" :class="{ disabled: !newReservation.staff_id }">
+                <input type="checkbox" v-model="menuStaffFilterEnabled" :disabled="!newReservation.staff_id">
+                担当者で絞り込む
+              </label>
+            </div>
+          </div>
           <select
             @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
             :class="{ 'input-error': validationErrors.menus }">
-            <option value="">メニューを追加...</option>
-            <option v-for="m in menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
+            <option value="">メニューを追加...（{{ filteredMenus.length }}件）</option>
+            <optgroup v-for="group in groupedFilteredMenus" :key="group.id" :label="group.label">
+              <option v-for="m in group.menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
+            </optgroup>
           </select>
+          <p v-if="filteredMenus.length === 0" class="hint">条件に一致するメニューがありません。フィルタを変更してください。</p>
           <div v-if="selectedMenus.length > 0" class="selected-menus">
             <span v-for="menu in selectedMenus" :key="menu.id" class="menu-chip">
               {{ menu.title }} ({{ menu.duration_min }}分)
@@ -2774,6 +2887,53 @@ const exportReservationsToExcel = async () => {
   border-radius: 4px;
   color: #2e7d32;
   font-size: 0.9rem;
+}
+
+.menu-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.menu-keyword-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.menu-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.menu-filter-select {
+  padding: 0.4rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 120px;
+}
+
+.staff-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #2c3e50;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.staff-filter-toggle.disabled {
+  color: #aaa;
+  cursor: not-allowed;
 }
 
 .hint {

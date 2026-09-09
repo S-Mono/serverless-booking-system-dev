@@ -52,6 +52,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    // 🏷️ メニュータグ (menu_tags)
+    match /menu_tags/{tagId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     match /staffs/{staffId} {
       allow read: if true;
       allow write: if isAdmin();

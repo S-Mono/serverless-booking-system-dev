@@ -431,8 +431,9 @@ const submitReservation = async () => {
               '学生メニュー（中学生まで）' : 'カイロプラクティック')) }}
           </h2>
           <p class="section-desc">
-            {{ activeTab === 'chiro' ? '身体のメンテナンスメニューです' : (activeTab === 'student' ? '中学生までの学生向けメニューです' :
-              'ご希望のメニューを選択してください') }}
+            {{ shopConfig.category_descriptions?.[activeTab] ||
+              (activeTab === 'chiro' ? '身体のメンテナンスメニューです' : (activeTab === 'student' ? '中学生までの学生向けメニューです' :
+                'ご希望のメニューを選択してください')) }}
           </p>
         </div>
         <ul class="menu-list">

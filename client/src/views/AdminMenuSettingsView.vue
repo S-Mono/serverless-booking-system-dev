@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 import { useUserStore } from '../stores/user'
@@ -9,7 +9,7 @@ const dialog = useDialogStore()
 const router = useRouter()
 const userStore = useUserStore()
 
-const { menus, staffs, isLoading: loading, isOperating, taxRate, menusByCategory, fetchData, calcTaxIncluded, calcTaxExcluded, saveMenu, deleteMenu, deleteCategoryMenus, importFromCsv, getStaffName } = useMenu({
+const { menus, staffs, menuTags, isLoading: loading, isOperating, taxRate, menusByCategory, fetchData, calcTaxIncluded, calcTaxExcluded, saveMenu, deleteMenu, deleteCategoryMenus, importFromCsv, getStaffName, getTagName, saveTag, deleteTag } = useMenu({
   onError: (error) => dialog.alert(error.message || '読み込みエラー', 'エラー')
 })
 
@@ -19,13 +19,109 @@ const editTargetId = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const editForm = ref({
-  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], description: '', category: 'barber' as 'barber' | 'beauty' | 'student' | 'chiro', order_priority: 10
+  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], tags: [] as string[], description: '', category: 'barber' as 'barber' | 'beauty' | 'student' | 'chiro', order_priority: 10
 })
 
-const categories = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'student', label: '🎓 学生（中学まで）' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
+const categories: { id: 'barber' | 'beauty' | 'student' | 'chiro'; label: string }[] = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'student', label: '🎓 学生（中学まで）' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
+
+// --- 一覧の表示モード・フィルタ ---
+const viewMode = ref<'category' | 'staff'>('staff')
+const searchKeyword = ref('')
+const filterTagId = ref('')
+
+// キーワード・タグでフィルタされたメニュー
+const filteredMenus = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  return menus.value.filter(m => {
+    if (keyword) {
+      const tagNames = (m.tags ?? []).map(id => getTagName(id)).join(' ')
+      const haystack = `${m.title} ${m.description ?? ''} ${tagNames}`.toLowerCase()
+      if (!haystack.includes(keyword)) return false
+    }
+    if (filterTagId.value && !(m.tags ?? []).includes(filterTagId.value)) return false
+    return true
+  })
+})
+
+// カテゴリ別セクション（フィルタ適用済み）
+const filteredByCategory = computed(() => ({
+  barber: filteredMenus.value.filter(m => m.category === 'barber' || !m.category),
+  beauty: filteredMenus.value.filter(m => m.category === 'beauty'),
+  student: filteredMenus.value.filter(m => m.category === 'student'),
+  chiro: filteredMenus.value.filter(m => m.category === 'chiro')
+}))
+
+// 担当者別セクション（複数担当のメニューは各セクションに重複表示）
+interface StaffSection { id: string; label: string; menus: typeof menus.value }
+const staffSections = computed<StaffSection[]>(() => {
+  const sections: StaffSection[] = staffs.value.map(staff => ({
+    id: staff.id,
+    label: `👤 ${staff.name}`,
+    menus: filteredMenus.value.filter(m => (m.available_staff_ids ?? []).includes(staff.id))
+  }))
+  // 担当未設定（全員対応可）セクション
+  const unassigned = filteredMenus.value.filter(m => (m.available_staff_ids ?? []).length === 0)
+  if (unassigned.length > 0 || sections.length === 0) {
+    sections.push({ id: '__unassigned__', label: '🌐 担当未設定（全員対応可）', menus: unassigned })
+  }
+  return sections
+})
+
+// --- タグ管理 ---
+const showTagModal = ref(false)
+const newTagName = ref('')
+const renamingTagId = ref<string | null>(null)
+const renameTagName = ref('')
+
+const addTagHandler = async () => {
+  const name = newTagName.value.trim()
+  if (!name) return
+  const success = await saveTag({ name })
+  if (success) {
+    newTagName.value = ''
+  } else {
+    dialog.alert('タグの追加に失敗しました（同名のタグが既に存在する可能性があります）', 'エラー')
+  }
+}
+
+const startRename = (tagId: string, currentName: string) => {
+  renamingTagId.value = tagId
+  renameTagName.value = currentName
+}
+
+const saveRenameHandler = async () => {
+  if (!renamingTagId.value) return
+  const name = renameTagName.value.trim()
+  if (!name) { renamingTagId.value = null; return }
+  const success = await saveTag({ id: renamingTagId.value, name })
+  if (!success) dialog.alert('タグ名の変更に失敗しました', 'エラー')
+  renamingTagId.value = null
+  renameTagName.value = ''
+}
+
+const deleteTagHandler = async (tagId: string, tagName: string) => {
+  const usedCount = menus.value.filter(m => (m.tags ?? []).includes(tagId)).length
+  const msg = usedCount > 0
+    ? `タグ「${tagName}」を削除しますか？\n${usedCount}件のメニューからもこのタグが外れます。`
+    : `タグ「${tagName}」を削除しますか？`
+  const ok = await dialog.confirm(msg, 'タグ削除の確認', 'danger')
+  if (!ok) return
+  const success = await deleteTag(tagId)
+  if (!success) dialog.alert('タグの削除に失敗しました', 'エラー')
+}
 
 const updateInclusive = () => { editForm.value.priceWithTax = calcTaxIncluded(editForm.value.price) }
 const updateExclusive = () => { editForm.value.price = calcTaxExcluded(editForm.value.priceWithTax) }
+
+// 編集フォームのタグ選択をトグル
+const toggleEditFormTag = (tagId: string) => {
+  const idx = editForm.value.tags.indexOf(tagId)
+  if (idx > -1) {
+    editForm.value.tags.splice(idx, 1)
+  } else {
+    editForm.value.tags.push(tagId)
+  }
+}
 
 // ⚡ カテゴリ内全削除 (開発者用)
 const deleteCategoryMenusHandler = async (catId: string, catLabel: string) => {
@@ -75,10 +171,11 @@ const openEditModal = (menu?: any) => {
     editForm.value = { ...JSON.parse(JSON.stringify(menu)), priceWithTax: menu.price_with_tax }
     if (!editForm.value.category) editForm.value.category = 'barber'
     if (editForm.value.order_priority === undefined) editForm.value.order_priority = 10
+    if (!editForm.value.tags) editForm.value.tags = []
   } else {
     isEditing.value = false
     editTargetId.value = null
-    editForm.value = { id: '', title: '', price: 4000, priceWithTax: calcTaxIncluded(4000), duration_min: 60, available_staff_ids: staffs.value.map(s => s.id), description: '', category: 'barber', order_priority: 10 }
+    editForm.value = { id: '', title: '', price: 4000, priceWithTax: calcTaxIncluded(4000), duration_min: 60, available_staff_ids: staffs.value.map(s => s.id), tags: [], description: '', category: 'barber', order_priority: 10 }
   }
   showModal.value = true
 }
@@ -93,6 +190,7 @@ const saveMenuHandler = async () => {
     price_with_tax: editForm.value.priceWithTax,
     duration_min: editForm.value.duration_min,
     available_staff_ids: editForm.value.available_staff_ids,
+    tags: editForm.value.tags,
     description: editForm.value.description || '',
     category: editForm.value.category,
     order_priority: Number(editForm.value.order_priority)
@@ -133,13 +231,28 @@ onMounted(() => { fetchData() })
         <div class="top-actions">
           <span class="tax-info">消費税率: <strong>{{ taxRate }}%</strong></span>
           <input type="file" ref="fileInput" accept=".csv" style="display: none" @change="importCsv" />
+          <button @click="showTagModal = true" class="tag-btn">🏷️ タグ管理</button>
           <button @click="triggerFileUpload" class="csv-btn">📤 CSVインポート</button>
           <button @click="openEditModal()" class="add-btn">＋ 新規メニュー追加</button>
         </div>
 
+        <div class="list-controls">
+          <input type="text" v-model="searchKeyword" class="list-search-input"
+            placeholder="🔍 キーワード検索（メニュー名・説明・タグ）">
+          <select v-model="filterTagId" class="list-tag-select">
+            <option value="">タグ: 全て</option>
+            <option v-for="tag in menuTags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+          </select>
+          <div class="view-mode-toggle">
+            <button :class="{ active: viewMode === 'staff' }" @click="viewMode = 'staff'">👤 担当別</button>
+            <button :class="{ active: viewMode === 'category' }" @click="viewMode = 'category'">📂 カテゴリ別</button>
+          </div>
+        </div>
+
         <div v-if="loading">Loading...</div>
 
-        <div v-else class="category-sections">
+        <!-- カテゴリ別表示 -->
+        <div v-else-if="viewMode === 'category'" class="category-sections">
           <div v-for="cat in categories" :key="cat.id" class="category-section">
             <div class="cat-header">
               <h3 class="cat-title">{{ cat.label }}</h3>
@@ -148,10 +261,10 @@ onMounted(() => { fetchData() })
                 全削除</button>
             </div>
 
-            <div v-if="menusByCategory[cat.id as keyof typeof menusByCategory].length === 0" class="no-item">メニューがありません
+            <div v-if="filteredByCategory[cat.id as keyof typeof filteredByCategory].length === 0" class="no-item">メニューがありません
             </div>
             <div class="menu-list">
-              <div v-for="menu in menusByCategory[cat.id as keyof typeof menusByCategory]" :key="menu.id"
+              <div v-for="menu in filteredByCategory[cat.id as keyof typeof filteredByCategory]" :key="menu.id"
                 class="menu-card">
                 <div class="card-header">
                   <div class="title-group"><span class="order-badge">{{ menu.order_priority }}</span>
@@ -169,6 +282,44 @@ onMounted(() => { fetchData() })
                         class="staff-tag">{{ getStaffName(staffId) }}</span><span
                         v-if="menu.available_staff_ids.length === 0" class="no-staff">担当者なし</span></div>
                   </div>
+                  <div v-if="(menu.tags ?? []).length > 0" class="detail-row"><span class="label">タグ:</span>
+                    <div class="staff-tags"><span v-for="tagId in menu.tags" :key="tagId"
+                        class="menu-tag-badge">{{ getTagName(tagId) }}</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 担当者別表示 -->
+        <div v-else class="category-sections">
+          <div v-for="section in staffSections" :key="section.id" class="category-section">
+            <div class="cat-header">
+              <h3 class="cat-title">{{ section.label }}</h3>
+              <span class="section-count">{{ section.menus.length }}件</span>
+            </div>
+            <div v-if="section.menus.length === 0" class="no-item">メニューがありません</div>
+            <div class="menu-list">
+              <div v-for="menu in section.menus" :key="menu.id" class="menu-card">
+                <div class="card-header">
+                  <div class="title-group"><span class="order-badge">{{ menu.order_priority }}</span>
+                    <h3>{{ menu.title }}</h3>
+                  </div>
+                  <div class="card-actions"><button @click="openEditModal(menu)" class="edit-icon">✏️</button><button
+                      @click="deleteMenuHandler(menu.id)" class="delete-icon">🗑️</button></div>
+                </div>
+                <div class="card-details">
+                  <div class="detail-row"><span class="label">価格:</span><span>¥{{ menu.price.toLocaleString() }} <small
+                        class="tax-text">(税込 ¥{{ menu.price_with_tax.toLocaleString() }})</small></span></div>
+                  <div class="detail-row"><span class="label">時間:</span> {{ menu.duration_min }}分</div>
+                  <div class="detail-row"><span class="label">区分:</span>
+                    <span class="menu-tag-badge category-badge">{{ categories.find(c => c.id === (menu.category || 'barber'))?.label }}</span>
+                  </div>
+                  <div v-if="(menu.tags ?? []).length > 0" class="detail-row"><span class="label">タグ:</span>
+                    <div class="staff-tags"><span v-for="tagId in menu.tags" :key="tagId"
+                        class="menu-tag-badge">{{ getTagName(tagId) }}</span></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -181,8 +332,11 @@ onMounted(() => { fetchData() })
       <div class="modal-content">
         <h3>{{ isEditing ? 'メニュー編集' : '新規メニュー' }}</h3>
         <div class="form-group"><label>カテゴリ</label>
-          <div class="radio-group"><label v-for="cat in categories" :key="cat.id" class="radio-item"><input type="radio"
-                :value="cat.id" v-model="editForm.category">{{ cat.label }}</label></div>
+          <div class="segmented-control">
+            <button v-for="cat in categories" :key="cat.id" type="button"
+              class="segment-btn" :class="{ active: editForm.category === cat.id }"
+              @click="editForm.category = cat.id">{{ cat.label }}</button>
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group priority-group"><label>表示順</label><input type="number"
@@ -197,13 +351,55 @@ onMounted(() => { fetchData() })
               @input="updateExclusive" /></div>
         </div>
         <div class="form-group"><label>所要時間 (分)</label><input type="number" v-model="editForm.duration_min" /></div>
-        <div class="form-group"><label>担当可能スタッフ</label>
+        <div class="form-group"><label>担当可能スタッフ <small class="hint-inline">※ 未選択 = 全員対応可</small></label>
           <div class="checkbox-group"><label v-for="staff in staffs" :key="staff.id" class="checkbox-item"><input
                 type="checkbox" :value="staff.id" v-model="editForm.available_staff_ids"> {{ staff.name }}</label></div>
+        </div>
+        <div class="form-group"><label>タグ <small class="hint-inline">※ クリックで選択・解除</small></label>
+          <div v-if="menuTags.length === 0" class="no-tags-msg">タグが未登録です。「🏷️ タグ管理」から追加してください。</div>
+          <div v-else class="tag-chip-group">
+            <button v-for="tag in menuTags" :key="tag.id" type="button"
+              class="tag-chip" :class="{ active: editForm.tags.includes(tag.id) }"
+              @click="toggleEditFormTag(tag.id)">
+              <span v-if="editForm.tags.includes(tag.id)" class="chip-check">✓</span>{{ tag.name }}
+            </button>
+          </div>
         </div>
         <div class="form-group"><label>説明 (任意)</label><textarea v-model="editForm.description"></textarea></div>
         <div class="modal-actions"><button @click="showModal = false" class="cancel-btn">キャンセル</button><button
             @click="saveMenuHandler" class="save-btn">保存</button></div>
+      </div>
+    </div>
+
+    <!-- タグ管理モーダル -->
+    <div v-if="showTagModal" class="modal-overlay" @click.self="showTagModal = false">
+      <div class="modal-content">
+        <div class="modal-header-row">
+          <h3>🏷️ タグ管理</h3>
+          <button class="close-x-btn" @click="showTagModal = false">×</button>
+        </div>
+        <div class="tag-add-row">
+          <input type="text" v-model="newTagName" placeholder="新しいタグ名（例: 新規限定）"
+            @keyup.enter="addTagHandler" />
+          <button @click="addTagHandler" class="save-btn" :disabled="isOperating">追加</button>
+        </div>
+        <div v-if="menuTags.length === 0" class="no-item">タグが登録されていません</div>
+        <ul v-else class="tag-manage-list">
+          <li v-for="tag in menuTags" :key="tag.id" class="tag-manage-item">
+            <template v-if="renamingTagId === tag.id">
+              <input type="text" v-model="renameTagName" class="tag-rename-input"
+                @keyup.enter="saveRenameHandler" @keyup.esc="renamingTagId = null" />
+              <button @click="saveRenameHandler" class="tag-action-btn" :disabled="isOperating">✔</button>
+              <button @click="renamingTagId = null" class="tag-action-btn">✖</button>
+            </template>
+            <template v-else>
+              <span class="tag-name">{{ tag.name }}</span>
+              <span class="tag-usage">{{ menus.filter(m => (m.tags ?? []).includes(tag.id)).length }}件のメニュー</span>
+              <button @click="startRename(tag.id, tag.name)" class="tag-action-btn" title="名前を変更">✏️</button>
+              <button @click="deleteTagHandler(tag.id, tag.name)" class="tag-action-btn" title="削除">🗑️</button>
+            </template>
+          </li>
+        </ul>
       </div>
     </div>
   </div>
@@ -264,6 +460,196 @@ onMounted(() => { fetchData() })
   justify-content: flex-end;
   align-items: center;
   gap: 1rem;
+}
+
+.tag-btn {
+  background: #8e44ad;
+  color: white;
+  border: none;
+  padding: 0.8rem 1rem;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.list-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.list-search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.list-tag-select {
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-width: 140px;
+}
+
+.view-mode-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.view-mode-toggle button {
+  background: #fff;
+  border: none;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #666;
+}
+
+.view-mode-toggle button.active {
+  background: #2c3e50;
+  color: #fff;
+  font-weight: bold;
+}
+
+.section-count {
+  background: #eee;
+  color: #666;
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.menu-tag-badge {
+  background: #f3e5f5;
+  color: #6a1b9a;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+}
+
+.category-badge {
+  background: #eceff1;
+  color: #455a64;
+}
+
+.no-tags-msg {
+  color: #999;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+}
+
+.hint-inline {
+  color: #999;
+  font-weight: normal;
+  font-size: 0.75rem;
+}
+
+/* タグ選択（バッジ型トグル） */
+.tag-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 1px solid #eee;
+  padding: 0.8rem;
+  border-radius: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+  background: #fff;
+  color: #555;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tag-chip:hover {
+  border-color: #6a1b9a;
+  color: #6a1b9a;
+}
+
+.tag-chip.active {
+  background: #6a1b9a;
+  color: #fff;
+  border-color: #6a1b9a;
+  font-weight: bold;
+}
+
+.chip-check {
+  font-size: 0.75rem;
+}
+
+.tag-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tag-add-row input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.tag-manage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tag-manage-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.3rem;
+  border-bottom: 1px solid #eee;
+}
+
+.tag-name {
+  font-weight: bold;
+  color: #2c3e50;
+  flex: 1;
+}
+
+.tag-usage {
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.tag-action-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.2rem;
+}
+
+.tag-rename-input {
+  flex: 1;
+  padding: 0.4rem;
+  border: 1px solid #42b883;
+  border-radius: 4px;
+  font-size: 1rem;
 }
 
 .tax-info {
@@ -537,6 +923,42 @@ textarea {
   align-items: center;
   gap: 0.3rem;
   cursor: pointer;
+}
+
+/* カテゴリ選択（セグメントボタン） */
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 1px solid #eee;
+  padding: 0.8rem;
+  border-radius: 4px;
+}
+
+.segment-btn {
+  flex: 1;
+  min-width: 90px;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  background: #fff;
+  color: #555;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.segment-btn:hover {
+  border-color: #2c3e50;
+  color: #2c3e50;
+}
+
+.segment-btn.active {
+  background: #2c3e50;
+  color: #fff;
+  border-color: #2c3e50;
+  font-weight: bold;
 }
 
 .modal-actions {
