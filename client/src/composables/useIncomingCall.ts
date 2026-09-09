@@ -49,6 +49,24 @@ const clearAutoCloseTimer = () => {
   }
 };
 
+// --- OSネイティブ通知（タブが背面・最小化中でも着信を知らせる） ---
+const showOsNotification = (phoneNumber: string, customerName?: string) => {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification('📞 電話着信', {
+      body: customerName ? `${customerName} 様\n${phoneNumber || '(番号なし)'}` : (phoneNumber || '(番号なし)'),
+      tag: `incoming-call-${Date.now()}`,
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch (e) {
+    console.warn('[CTI] OS通知の表示に失敗:', e);
+  }
+};
+
 export function useIncomingCall() {
   const userStore = useUserStore();
 
@@ -78,6 +96,70 @@ export function useIncomingCall() {
     return null;
   };
 
+  // 新規着信1件を処理（onSnapshot と強制再取得の両方から呼ぶ）
+  const processNewCall = async (id: string, data: { phoneNumber?: string; createdAt?: Timestamp }) => {
+    const createdAt = data.createdAt as Timestamp;
+
+    // 起動前の着信や45秒以上経過した着信はスキップ
+    if (!createdAt || createdAt.toMillis() < mountTime || (Date.now() - createdAt.toMillis() > 45000)) {
+      return;
+    }
+
+    // 既にキューにある着信はスキップ（重複防止）
+    if (incomingCalls.value.some(c => c.id === id)) {
+      return;
+    }
+
+    const rawPhone = data.phoneNumber || '';
+    // 既存顧客と照合
+    const customer = await findCustomerByPhone(rawPhone);
+
+    // 既存の全着信の新着フラグを解除（バッジは次の着信が来るまで）
+    incomingCalls.value.forEach(c => { c.isNew = false; });
+
+    // 新着を先頭に追加し、直近5件に切り捨て
+    incomingCalls.value.unshift({
+      id,
+      phoneNumber: rawPhone,
+      createdAt,
+      customer,
+      isNew: true
+    });
+    if (incomingCalls.value.length > MAX_CALLS) {
+      incomingCalls.value = incomingCalls.value.slice(0, MAX_CALLS);
+    }
+
+    // 自動クローズタイマーをリセット
+    resetAutoCloseTimer();
+
+    // OSネイティブ通知（タブ背面・最小化中でも届く）
+    showOsNotification(rawPhone, customer?.name);
+  };
+
+  // タブが再アクティブになったとき、onSnapshot がスロットリングで
+  // 止まっていた分を取りこぼさないよう getDocs で強制再取得する
+  const refreshOnVisible = async () => {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const q = query(
+        collection(db, 'incoming_calls'),
+        orderBy('createdAt', 'desc'),
+        limit(MAX_CALLS)
+      );
+      const snap = await getDocs(q);
+      // 新しい順に来るので古い順に処理して重複チェックを効かせる
+      for (const docSnap of snap.docs.reverse()) {
+        await processNewCall(docSnap.id, docSnap.data());
+      }
+    } catch (e) {
+      console.error('[CTI] 再取得エラー:', e);
+    }
+  };
+
+  const handleVisibilityChange = () => {
+    refreshOnVisible();
+  };
+
   const startListening = () => {
     if (unsubscribe) return;
 
@@ -88,46 +170,22 @@ export function useIncomingCall() {
       limit(MAX_CALLS)
     );
 
-    unsubscribe = onSnapshot(q, async (snapshot) => {
+    unsubscribe = onSnapshot(q, (snapshot) => {
       for (const change of snapshot.docChanges()) {
         if (change.type === 'added') {
-          const data = change.doc.data();
-          const createdAt = data.createdAt as Timestamp;
-
-          // 起動前の着信や45秒以上経過した着信はスキップ
-          if (!createdAt || createdAt.toMillis() < mountTime || (Date.now() - createdAt.toMillis() > 45000)) {
-            continue;
-          }
-
-          // 既にキューにある着信はスキップ（重複防止）
-          if (incomingCalls.value.some(c => c.id === change.doc.id)) {
-            continue;
-          }
-
-          const rawPhone = data.phoneNumber || '';
-          // 既存顧客と照合
-          const customer = await findCustomerByPhone(rawPhone);
-
-          // 既存の全着信の新着フラグを解除（バッジは次の着信が来るまで）
-          incomingCalls.value.forEach(c => { c.isNew = false; });
-
-          // 新着を先頭に追加し、直近5件に切り捨て
-          incomingCalls.value.unshift({
-            id: change.doc.id,
-            phoneNumber: rawPhone,
-            createdAt,
-            customer,
-            isNew: true
-          });
-          if (incomingCalls.value.length > MAX_CALLS) {
-            incomingCalls.value = incomingCalls.value.slice(0, MAX_CALLS);
-          }
-
-          // 自動クローズタイマーをリセット
-          resetAutoCloseTimer();
+          // 非同期処理の中で await するため fire-and-forget で呼ぶ
+          void processNewCall(change.doc.id, change.doc.data());
         }
       }
     });
+
+    // 再アクティブ時の強制再取得（非アクティブ中に止まった着信を拾う）
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // OS通知の権限が未決定ならリクエスト（granted/denied なら何もしない）
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => { /* ignore */ });
+    }
   };
 
   const stopListening = () => {
@@ -135,6 +193,7 @@ export function useIncomingCall() {
       unsubscribe();
       unsubscribe = null;
     }
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     clearAutoCloseTimer();
   };
 
