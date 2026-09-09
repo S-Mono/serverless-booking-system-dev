@@ -8,7 +8,10 @@
 
       <div class="modal-body">
         <div class="phone-label">発信元電話番号</div>
-        <div class="phone-number">{{ incomingPhoneNumber }}</div>
+        <div class="phone-number-row">
+          <div class="phone-number">{{ incomingPhoneNumber }}</div>
+          <div v-if="latestCallTime" class="call-time-main">🕐 {{ latestCallTime }}</div>
+        </div>
 
         <!-- 既存顧客照合ヒット時 -->
         <div v-if="matchedCustomer" class="customer-card matched">
@@ -20,6 +23,23 @@
         <div v-else class="customer-card new">
           <div class="new-title">新規のお客様（未登録番号）</div>
           <div class="new-desc">顧客カルテに一致する登録がありません。</div>
+        </div>
+
+        <!-- 連続着信の履歴（2件目以降） -->
+        <div v-if="pastCalls.length > 0" class="call-history">
+          <div class="call-history-title">連続着信（{{ pastCalls.length }}件）</div>
+          <div
+            v-for="call in pastCalls"
+            :key="call.id"
+            class="call-history-item"
+            @click="handleSelectCall(call)"
+          >
+            <span v-if="call.isNew" class="new-badge">NEW</span>
+            <span class="history-time">{{ formatTime(call.createdAt) }}</span>
+            <span class="history-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
+            <span v-if="call.customer" class="history-name">{{ call.customer.name }}</span>
+            <span v-else class="history-unknown">未登録</span>
+          </div>
         </div>
       </div>
 
@@ -46,11 +66,28 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useIncomingCall } from '@/composables/useIncomingCall';
+import { Timestamp } from 'firebase/firestore';
+import { useIncomingCall, type IncomingCallItem } from '@/composables/useIncomingCall';
 
 const router = useRouter();
-const { isRinging, incomingPhoneNumber, matchedCustomer, dismiss } = useIncomingCall();
+const { isRinging, incomingPhoneNumber, matchedCustomer, incomingCalls, dismiss } = useIncomingCall();
+
+// 最新着信の時刻（メイン表示用）
+const latestCallTime = computed(() => {
+  const latest = incomingCalls.value[0];
+  return latest ? formatTime(latest.createdAt) : '';
+});
+
+// 2件目以降の着信（履歴リスト用）
+const pastCalls = computed(() => incomingCalls.value.slice(1));
+
+const formatTime = (ts: Timestamp) => {
+  if (!ts) return '';
+  const d = ts.toDate();
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+};
 
 const handleCreateReservation = () => {
   const queryParams: Record<string, string> = {
@@ -60,6 +97,21 @@ const handleCreateReservation = () => {
   if (matchedCustomer.value) {
     queryParams.customerId = matchedCustomer.value.id;
     queryParams.customerName = matchedCustomer.value.name;
+  }
+
+  dismiss();
+  router.push({ path: '/admin', query: queryParams });
+};
+
+// 履歴の着信を選択して予約登録へ
+const handleSelectCall = (call: IncomingCallItem) => {
+  const queryParams: Record<string, string> = {
+    phone: call.phoneNumber
+  };
+
+  if (call.customer) {
+    queryParams.customerId = call.customer.id;
+    queryParams.customerName = call.customer.name;
   }
 
   dismiss();
@@ -134,12 +186,26 @@ const handleOpenRecord = () => {
   margin-bottom: 0.2rem;
 }
 
+.phone-number-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
 .phone-number {
   font-size: 1.8rem;
   font-weight: bold;
   color: #2c3e50;
   letter-spacing: 0.05em;
-  margin-bottom: 1rem;
+}
+
+.call-time-main {
+  font-size: 1rem;
+  color: #666;
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 .customer-card {
@@ -180,6 +246,71 @@ const handleOpenRecord = () => {
   font-size: 0.8rem;
   color: #666;
   margin-top: 2px;
+}
+
+/* 連続着信の履歴リスト */
+.call-history {
+  margin-top: 1rem;
+  border-top: 1px solid #eee;
+  padding-top: 0.75rem;
+}
+
+.call-history-title {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.call-history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-wrap: wrap;
+}
+
+.call-history-item:hover {
+  background: #f4f5f7;
+}
+
+.new-badge {
+  background: #e74c3c;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: bold;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+}
+
+.history-time {
+  font-weight: bold;
+  color: #333;
+  min-width: 42px;
+}
+
+.history-phone {
+  color: #555;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.history-name {
+  font-weight: bold;
+  color: #0d47a1;
+  font-size: 0.9rem;
+}
+
+.history-unknown {
+  color: #b78103;
+  font-size: 0.8rem;
+  background: #fff8e1;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
 }
 
 .modal-actions {
