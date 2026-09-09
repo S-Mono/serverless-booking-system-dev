@@ -45,6 +45,22 @@ const historyReservations = ref<Reservation[]>([])
 const showHistory = ref(false)
 const historyDays = ref(30) // 履歴表示期間（日数）
 
+// 着信履歴（タイムラインの選択日と連動、既定で開く）
+interface IncomingCall {
+  id: string
+  phoneNumber: string
+  createdAt: Timestamp
+}
+interface CustomerLite {
+  id: string
+  name_kanji?: string
+  name_kana?: string
+  phoneClean: string
+}
+const incomingCalls = ref<IncomingCall[]>([])
+const showIncomingCalls = ref(true)
+const allCustomers = ref<CustomerLite[]>([])
+
 const menus = ref<Menu[]>([])
 const shopConfig = ref<ShopConfigData>(getDefaultShopConfig())
 const loading = ref(true)
@@ -371,6 +387,9 @@ const initData = async (fetchMaster = true) => {
     // 3) 履歴データの取得（確定・キャンセル済み）
     fetchHistoryReservations()
 
+    // 4) 着信履歴の取得（選択日と連動）
+    fetchIncomingCalls()
+
     // Note: Foreground FCM handler is registered once in onMounted lifecycle
   } catch (e) { console.error(e); loading.value = false }
 }
@@ -408,6 +427,80 @@ const fetchHistoryReservations = () => {
       res.status === 'confirmed' || res.status === 'cancelled'
     )
     console.log('[履歴] 取得件数:', allReservations.length, 'フィルタ後:', historyReservations.value.length)
+  })
+}
+
+// --- 着信履歴セクション用 ---
+// 電話番号の正規化（数字のみ）
+const cleanPhoneNumber = (num: string) => (num || '').replace(/\D/g, '')
+
+// 顧客を一度だけ取得してメモリ上に保持（サジェスト用の個別取得とは別管理）
+const fetchCustomersOnce = async () => {
+  try {
+    const snap = await getDocs(collection(db, 'customers'))
+    allCustomers.value = snap.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        name_kanji: data.name_kanji || '',
+        name_kana: data.name_kana || '',
+        phoneClean: cleanPhoneNumber(data.phone_number || data.phoneNumber || '')
+      }
+    })
+  } catch (e) {
+    console.error('[着信履歴] 顧客取得エラー:', e)
+  }
+}
+
+// 選択日の着信を取得（タイムラインと同じ日付範囲: 当日0:00〜翌日0:00）
+const fetchIncomingCalls = async () => {
+  try {
+    const startOfDay = new Date(selectedDate.value); startOfDay.setHours(0, 0, 0, 0)
+    const endOfDay = new Date(selectedDate.value); endOfDay.setDate(endOfDay.getDate() + 1); endOfDay.setHours(0, 0, 0, 0)
+
+    const qCalls = query(
+      collection(db, 'incoming_calls'),
+      where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
+      where('createdAt', '<', Timestamp.fromDate(endOfDay)),
+      orderBy('createdAt', 'desc')
+    )
+
+    const snap = await getDocs(qCalls)
+    incomingCalls.value = snap.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        phoneNumber: data.phoneNumber || '',
+        createdAt: data.createdAt as Timestamp
+      }
+    })
+  } catch (e) {
+    console.error('[着信履歴] 取得エラー:', e)
+  }
+}
+
+// 電話番号から顧客を照合
+const findCustomerForCall = (rawPhone: string): CustomerLite | null => {
+  const target = cleanPhoneNumber(rawPhone)
+  if (!target) return null
+  return allCustomers.value.find(c => c.phoneClean === target) || null
+}
+
+const formatCallTime = (ts: Timestamp) => {
+  if (!ts) return ''
+  const d = ts.toDate()
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// 着信から予約作成（既存の着信クエリ導線を流用）
+const createReservationFromCall = (call: IncomingCall) => {
+  const customer = findCustomerForCall(call.phoneNumber)
+  router.push({
+    path: '/admin',
+    query: {
+      phone: call.phoneNumber,
+      ...(customer ? { customerId: customer.id } : {})
+    }
   })
 }
 
@@ -1379,6 +1472,8 @@ const loadMoreHistoryDays = (days = 30) => {
 
 onMounted(async () => {
   initData()
+  // 着信履歴の顧客照合用に顧客一覧を一度だけ取得
+  fetchCustomersOnce()
   // try to preload the chime buffer for lower-latency playback
   preloadChime()
   // 通知状態を確認・復元
@@ -1784,6 +1879,45 @@ const exportReservationsToExcel = async () => {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- 着信履歴セクション（選択日と連動、既定で開く） -->
+        <div class="history-section">
+          <div class="history-header incoming-header">
+            <button @click="showIncomingCalls = !showIncomingCalls" class="history-toggle-btn">
+              <span class="toggle-icon">{{ showIncomingCalls ? '▼' : '▶' }}</span>
+              <h3 style="margin: 0;">📞 着信履歴（{{ formatDateJP(selectedDate) }}）</h3>
+              <span class="history-count">{{ incomingCalls.length }}件</span>
+            </button>
+            <button @click="router.push('/admin/incoming-calls')" class="incoming-calls-link-btn">
+              着信履歴画面へ →
+            </button>
+          </div>
+
+          <transition name="slide-down">
+            <div v-if="showIncomingCalls" class="history-content">
+              <div v-if="incomingCalls.length === 0" class="no-data">
+                この日の着信はありません
+              </div>
+
+              <div v-else class="incoming-call-list">
+                <div v-for="call in incomingCalls" :key="call.id" class="incoming-call-card">
+                  <div class="call-info">
+                    <span class="call-time">{{ formatCallTime(call.createdAt) }}</span>
+                    <span class="call-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
+                    <template v-if="findCustomerForCall(call.phoneNumber)">
+                      <span class="call-customer">
+                        {{ findCustomerForCall(call.phoneNumber)?.name_kanji || '-' }}
+                        <span class="call-kana">{{ findCustomerForCall(call.phoneNumber)?.name_kana }}</span>
+                      </span>
+                    </template>
+                    <span v-else class="call-unknown">未登録</span>
+                  </div>
+                  <button class="reserve-btn" @click="createReservationFromCall(call)">📝 予約作成</button>
+                </div>
+              </div>
+            </div>
+          </transition>
         </div>
 
         <!-- 予約履歴セクション -->
@@ -3360,6 +3494,107 @@ textarea {
 .history-info-row .value.price {
   color: #27ae60;
   font-weight: bold;
+}
+
+/* 着信履歴セクション */
+.incoming-header {
+  display: flex;
+  align-items: center;
+}
+
+.incoming-header .history-toggle-btn {
+  flex: 1;
+}
+
+.incoming-calls-link-btn {
+  margin-right: 1rem;
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  border: 1px solid #3498db;
+  color: #3498db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.incoming-calls-link-btn:hover {
+  background: #3498db;
+  color: white;
+}
+
+.incoming-call-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.incoming-call-card {
+  background: white;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #3498db;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.call-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.call-time {
+  font-weight: bold;
+  color: #333;
+  min-width: 48px;
+}
+
+.call-phone {
+  color: #555;
+  font-family: monospace;
+  font-size: 0.95rem;
+}
+
+.call-customer {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.call-kana {
+  font-weight: normal;
+  color: #888;
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+}
+
+.call-unknown {
+  color: #e67e22;
+  font-size: 0.85rem;
+  background: #fdf2e4;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.incoming-call-card .reserve-btn {
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.incoming-call-card .reserve-btn:hover {
+  background: #229954;
 }
 
 /* スライドダウンアニメーション */
