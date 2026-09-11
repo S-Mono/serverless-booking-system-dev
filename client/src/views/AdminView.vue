@@ -117,7 +117,8 @@ let incomingResizeStartY = 0
 let incomingResizeStartHeight = 0
 
 const onIncomingResizeMove = (e: PointerEvent) => {
-  const delta = e.clientY - incomingResizeStartY
+  // ハンドルがセクション上部にあるため、上方向へドラッグで拡大・下方向へドラッグで縮小する方が直感的
+  const delta = incomingResizeStartY - e.clientY
   incomingCallsListHeight.value = Math.min(
     MAX_INCOMING_LIST_HEIGHT,
     Math.max(MIN_INCOMING_LIST_HEIGHT, incomingResizeStartHeight + delta)
