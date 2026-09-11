@@ -170,6 +170,13 @@ const dragStartX = ref(0)
 // --- モーダル管理 ---
 const showModal = ref(false)
 const showDetailModal = ref(false)
+// 予約作成/編集フォームを閉じる（着信対応の枠選択モード中なら、オーバーレイ/吹き出しも解除する）
+const closeReservationModal = () => {
+  showModal.value = false
+  if (pendingCallInfo.value) {
+    pendingCallInfo.value = null
+  }
+}
 
 const selectedReservation = ref<Reservation | null>(null)
 const customerHistory = ref<Reservation[]>([]) // 👈 履歴用
@@ -1287,7 +1294,7 @@ const submitReservation = async () => {
         }
       }
     }
-    showModal.value = false
+    closeReservationModal()
   } catch (e) { console.error(e); dialog.alert('処理失敗') }
 }
 
@@ -2269,11 +2276,11 @@ const exportReservationsToExcel = async () => {
       </div>
     </div>
 
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+    <div v-if="showModal" class="modal-overlay" @click.self="closeReservationModal">
       <div class="modal-content">
         <div class="modal-header-row">
           <h3>{{ isEditing ? '予約の編集' : '新規予約 (電話受付)' }}</h3>
-          <button class="close-x-btn" @click="showModal = false">×</button>
+          <button class="close-x-btn" @click="closeReservationModal">×</button>
         </div>
         <div class="form-group staff-select-group">
           <label>担当スタッフ <span style="color: #e74c3c;">*</span></label>
