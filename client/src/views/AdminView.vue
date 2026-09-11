@@ -70,6 +70,63 @@ const incomingCalls = ref<IncomingCall[]>([])
 const showIncomingCalls = ref(true)
 const allCustomers = ref<CustomerLite[]>([])
 
+// 着信履歴リストの高さ（ドラッグで変更可・localStorageで次回表示時にも保持）
+const INCOMING_CALLS_LIST_HEIGHT_KEY = 'admin_incoming_calls_list_height'
+const DEFAULT_INCOMING_LIST_HEIGHT = 160 // 履歴が約3行表示できる高さ
+const MIN_INCOMING_LIST_HEIGHT = 80
+const MAX_INCOMING_LIST_HEIGHT = 600
+
+const loadIncomingCallsListHeight = (): number => {
+  try {
+    const saved = localStorage.getItem(INCOMING_CALLS_LIST_HEIGHT_KEY)
+    if (saved) {
+      const h = parseInt(saved, 10)
+      if (!Number.isNaN(h) && h >= MIN_INCOMING_LIST_HEIGHT && h <= MAX_INCOMING_LIST_HEIGHT) {
+        return h
+      }
+    }
+  } catch {
+    // localStorage が使えない環境では既定値を使用
+  }
+  return DEFAULT_INCOMING_LIST_HEIGHT
+}
+
+const incomingCallsListHeight = ref(loadIncomingCallsListHeight())
+const incomingListStyle = computed(() => ({ height: `${incomingCallsListHeight.value}px` }))
+
+// ドラッグによる高さ変更（Pointer Events でマウス/タッチ両対応）
+let incomingResizeStartY = 0
+let incomingResizeStartHeight = 0
+
+const onIncomingResizeMove = (e: PointerEvent) => {
+  const delta = e.clientY - incomingResizeStartY
+  incomingCallsListHeight.value = Math.min(
+    MAX_INCOMING_LIST_HEIGHT,
+    Math.max(MIN_INCOMING_LIST_HEIGHT, incomingResizeStartHeight + delta)
+  )
+}
+
+const stopIncomingResize = () => {
+  window.removeEventListener('pointermove', onIncomingResizeMove)
+  window.removeEventListener('pointerup', stopIncomingResize)
+  window.removeEventListener('pointercancel', stopIncomingResize)
+  document.body.style.userSelect = ''
+  try {
+    localStorage.setItem(INCOMING_CALLS_LIST_HEIGHT_KEY, String(incomingCallsListHeight.value))
+  } catch {
+    // 保存に失敗しても動作は継続
+  }
+}
+
+const startIncomingResize = (e: PointerEvent) => {
+  incomingResizeStartY = e.clientY
+  incomingResizeStartHeight = incomingCallsListHeight.value
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onIncomingResizeMove)
+  window.addEventListener('pointerup', stopIncomingResize)
+  window.addEventListener('pointercancel', stopIncomingResize)
+}
+
 const menus = ref<Menu[]>([])
 const shopConfig = ref<ShopConfigData>(getDefaultShopConfig())
 const loading = ref(true)
@@ -1986,22 +2043,31 @@ const exportReservationsToExcel = async () => {
                 この日の着信はありません
               </div>
 
-              <div v-else class="incoming-call-list">
-                <div v-for="call in incomingCalls" :key="call.id" class="incoming-call-card">
-                  <div class="call-info">
-                    <span class="call-time">{{ formatCallTime(call.createdAt) }}</span>
-                    <span class="call-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
-                    <template v-if="findCustomerForCall(call.phoneNumber)">
-                      <span class="call-customer">
-                        {{ findCustomerForCall(call.phoneNumber)?.name_kanji || '-' }}
-                        <span class="call-kana">{{ findCustomerForCall(call.phoneNumber)?.name_kana }}</span>
-                      </span>
-                    </template>
-                    <span v-else class="call-unknown">未登録</span>
+              <template v-else>
+                <div class="incoming-call-list" :style="incomingListStyle">
+                  <div v-for="call in incomingCalls" :key="call.id" class="incoming-call-card">
+                    <div class="call-info">
+                      <span class="call-time">{{ formatCallTime(call.createdAt) }}</span>
+                      <span class="call-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
+                      <template v-if="findCustomerForCall(call.phoneNumber)">
+                        <span class="call-customer">
+                          {{ findCustomerForCall(call.phoneNumber)?.name_kanji || '-' }}
+                          <span class="call-kana">{{ findCustomerForCall(call.phoneNumber)?.name_kana }}</span>
+                        </span>
+                      </template>
+                      <span v-else class="call-unknown">未登録</span>
+                    </div>
+                    <button class="reserve-btn" @click="createReservationFromCall(call)">📝 予約作成</button>
                   </div>
-                  <button class="reserve-btn" @click="createReservationFromCall(call)">📝 予約作成</button>
                 </div>
-              </div>
+                <div
+                  class="incoming-list-resize-handle"
+                  title="ドラッグして高さを変更"
+                  @pointerdown.prevent="startIncomingResize"
+                >
+                  <span class="resize-grip"></span>
+                </div>
+              </template>
             </div>
           </transition>
         </div>
@@ -3687,8 +3753,42 @@ textarea {
 .incoming-call-list {
   display: grid;
   gap: 0.5rem;
-  max-height: 300px;
+  align-content: start;
+  height: 160px; /* 既定値（:style のバインドで上書きされる） */
+  min-height: 80px;
+  max-height: 600px;
   overflow-y: auto;
+}
+
+/* 高さ変更用のドラッグハンドル */
+.incoming-list-resize-handle {
+  margin-top: 0.25rem;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  border-radius: 4px;
+  background: #eef1f3;
+  border: 1px solid #dde3e7;
+  touch-action: none;
+}
+
+.incoming-list-resize-handle:hover {
+  background: #e2e8ec;
+  border-color: #c8d2d9;
+}
+
+.resize-grip {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: #b0bac2;
+  pointer-events: none;
+}
+
+.incoming-list-resize-handle:hover .resize-grip {
+  background: #8fa0ac;
 }
 
 .incoming-call-card {
