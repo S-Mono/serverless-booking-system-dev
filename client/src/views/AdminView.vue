@@ -668,6 +668,15 @@ const findCustomerForCall = (rawPhone: string): CustomerLite | null => {
   return allCustomers.value.find(c => c.phoneClean === target) || null
 }
 
+// タイムライン表示用: 顧客マスタの漢字名を優先し、なければカナ、それも無ければ予約に保存された名称を使用
+const getReservationDisplayName = (res: Reservation): string => {
+  if (res.customer_id) {
+    const c = allCustomers.value.find(c => c.id === res.customer_id)
+    if (c) return c.name_kanji || c.name_kana || res.customer_name || ''
+  }
+  return res.customer_name || ''
+}
+
 const formatCallTime = (ts: Timestamp) => {
   if (!ts) return ''
   const d = ts.toDate()
@@ -2149,6 +2158,7 @@ const exportReservationsToExcel = async () => {
                         <span v-if="res.status === 'pending'">【未】</span>
                         <span v-else-if="isBlockReservation(res)">【枠】</span>
                         {{ isBlockReservation(res) ? '時間枠確保' : res.menu_items[0]?.title }}
+                        <span v-if="!isBlockReservation(res)" class="bar-customer-name">{{ getReservationDisplayName(res) }}</span>
                       </span>
                     </div>
                   </template>
@@ -3307,6 +3317,22 @@ const exportReservationsToExcel = async () => {
   transition: all 0.2s;
   z-index: 1;
   opacity: 0.95;
+}
+
+.bar-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  overflow: hidden;
+}
+
+.bar-customer-name {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .reservation-bar:hover {
