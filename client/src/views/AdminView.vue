@@ -2004,6 +2004,9 @@ const exportReservationsToExcel = async () => {
 
 <template>
   <div class="admin-container">
+    <!-- 着信からの予約作成: 枠選択モード中、タイムライン以外を暗くするオーバーレイ -->
+    <div v-if="pendingCallInfo" class="page-dim-overlay"></div>
+
     <header class="admin-header">
       <div class="header-left">
         <h2>予約管理ダッシュボード</h2>
@@ -2102,16 +2105,15 @@ const exportReservationsToExcel = async () => {
           <button class="today-btn" @click="selectedDate = new Date()">今日</button>
         </div>
 
-        <!-- 着信からの予約作成: 枠選択モードのバナー -->
-        <div v-if="pendingCallInfo" class="call-select-banner">
-          <span>
-            📞 着信の予約を作成中：タイムライン上の <strong>【枠】</strong>（時間枠確保）を選択してください
-            <template v-if="pendingCallInfo.customerName">（{{ pendingCallInfo.customerName }} 様）</template>
-          </span>
-          <button class="banner-cancel-btn" @click="pendingCallInfo = null">キャンセル</button>
-        </div>
-
-        <div class="timeline-container">
+        <div class="timeline-container" :class="{ 'is-slot-selecting': pendingCallInfo }">
+          <!-- 着信からの予約作成: 枠選択モードの吹き出し -->
+          <div v-if="pendingCallInfo" class="call-select-bubble">
+            <span>
+              📞 タイムライン上の <strong>【枠】</strong>（時間枠確保）を選択してください
+              <template v-if="pendingCallInfo.customerName">（{{ pendingCallInfo.customerName }} 様）</template>
+            </span>
+            <button class="banner-cancel-btn" @click="pendingCallInfo = null">キャンセル</button>
+          </div>
           <div class="timeline-header">
             <div class="staff-header-cell"></div>
             <div class="time-scale">
@@ -3922,19 +3924,68 @@ textarea {
   white-space: nowrap;
 }
 
-/* 着信からの予約作成: 枠選択モードのバナー */
-.call-select-banner {
+/* 着信からの予約作成: ページ全体の暗いオーバーレイ（タイムライン以外を覆う） */
+.page-dim-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 500;
+  pointer-events: none;
+  /* タイムラインをクリックできるよう、下のクリックは通す（timeline-container側でz-indexを上げて視覚的に浮かせる） */
+}
+
+/* 枠選択モード中はタイムラインをオーバーレイより手前に浮かせて強調表示 */
+.timeline-container.is-slot-selecting {
+  position: relative;
+  z-index: 501;
+  background: #fff;
+  box-shadow: 0 0 0 3px #f0c36d, 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+}
+
+/* 枠選択モードの案内吹き出し（セクション右上） */
+.call-select-bubble {
+  position: absolute;
+  top: -14px;
+  right: 12px;
+  transform: translateY(-100%);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 1rem;
-  margin-bottom: 0.5rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem;
   background: #fff8e1;
   border: 1px solid #f0c36d;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
   color: #7a5b00;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 502;
+  white-space: nowrap;
+}
+
+.call-select-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  right: 24px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #f0c36d;
+}
+
+.call-select-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  right: 25px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 7px solid #fff8e1;
+  z-index: 1;
 }
 
 .banner-cancel-btn {
