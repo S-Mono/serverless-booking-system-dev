@@ -1598,6 +1598,9 @@ const onMouseUp = async () => {
         note: BLOCK_NOTE
       })
     }
+  } else if (!openForm && pendingCallInfo.value) {
+    // 着信対応の枠選択モード中にキャンセルした場合は、オーバーレイ/吹き出しを解除する
+    pendingCallInfo.value = null
   }
 }
 const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
@@ -2106,15 +2109,16 @@ const exportReservationsToExcel = async () => {
           <button class="today-btn" @click="selectedDate = new Date()">今日</button>
         </div>
 
+        <!-- 着信からの予約作成: 枠選択モードの案内（通常フロー内に配置し、overflowでクリップされないようにする） -->
+        <div v-if="pendingCallInfo" class="call-select-bubble">
+          <span>
+            📞 タイムライン上の <strong>【枠】</strong>（時間枠確保）を選択してください
+            <template v-if="pendingCallInfo.customerName">（{{ pendingCallInfo.customerName }} 様）</template>
+          </span>
+          <button class="banner-cancel-btn" @click="pendingCallInfo = null">キャンセル</button>
+        </div>
+
         <div class="timeline-container" :class="{ 'is-slot-selecting': pendingCallInfo }">
-          <!-- 着信からの予約作成: 枠選択モードの吹き出し -->
-          <div v-if="pendingCallInfo" class="call-select-bubble">
-            <span>
-              📞 タイムライン上の <strong>【枠】</strong>（時間枠確保）を選択してください
-              <template v-if="pendingCallInfo.customerName">（{{ pendingCallInfo.customerName }} 様）</template>
-            </span>
-            <button class="banner-cancel-btn" @click="pendingCallInfo = null">キャンセル</button>
-          </div>
           <div class="timeline-header">
             <div class="staff-header-cell"></div>
             <div class="time-scale">
@@ -3944,14 +3948,14 @@ textarea {
   border-radius: 6px;
 }
 
-/* 枠選択モードの案内吹き出し（セクション右上） */
+/* 枠選択モードの案内バナー（timeline-containerの外・通常フロー内に配置し、overflowでクリップされないようにする） */
 .call-select-bubble {
-  position: absolute;
-  top: -14px;
-  right: 12px;
-  transform: translateY(-100%);
+  position: relative;
+  z-index: 502;
+  margin: 0.5rem 0.5rem 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
   padding: 0.5rem 0.9rem;
   background: #fff8e1;
@@ -3960,33 +3964,7 @@ textarea {
   font-size: 0.85rem;
   color: #7a5b00;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 502;
-  white-space: nowrap;
-}
-
-.call-select-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  right: 24px;
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 8px solid #f0c36d;
-}
-
-.call-select-bubble::before {
-  content: '';
-  position: absolute;
-  bottom: -6px;
-  right: 25px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-top: 7px solid #fff8e1;
-  z-index: 1;
+  flex-shrink: 0;
 }
 
 .banner-cancel-btn {
