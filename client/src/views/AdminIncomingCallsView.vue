@@ -119,7 +119,7 @@ const createReservation = (call: IncomingCall) => {
         path: '/admin',
         query: {
             phone: call.phoneNumber,
-            ...(customer ? { customerId: customer.id } : {})
+            ...(customer ? { customerId: customer.id, customerName: customer.name_kana || customer.name_kanji || '' } : {})
         }
     })
 }

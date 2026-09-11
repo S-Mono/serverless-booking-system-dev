@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { db, auth, messaging, VAPID_KEY } from '../lib/firebase'
-import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, Timestamp, onSnapshot, getDoc, type Unsubscribe } from 'firebase/firestore'
+import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, limit, Timestamp, onSnapshot, getDoc, type Unsubscribe } from 'firebase/firestore'
 import { useRoute, useRouter } from 'vue-router'
 import { useDialogStore } from '../stores/dialog'
 // プッシュ通知機能（管理者専用・LINEブラウザでは動作しない）
@@ -94,6 +94,24 @@ const loadIncomingCallsListHeight = (): number => {
 const incomingCallsListHeight = ref(loadIncomingCallsListHeight())
 const incomingListStyle = computed(() => ({ height: `${incomingCallsListHeight.value}px` }))
 
+// 着信履歴の表示範囲トグル（デフォルト: 全件 / localStorageで保持）
+const INCOMING_FILTER_KEY = 'admin_incoming_calls_filter'
+const loadIncomingFilter = (): 'all' | 'day' => {
+  try {
+    return localStorage.getItem(INCOMING_FILTER_KEY) === 'day' ? 'day' : 'all'
+  } catch {
+    return 'all'
+  }
+}
+const incomingFilterMode = ref<'all' | 'day'>(loadIncomingFilter())
+const toggleIncomingFilter = (mode: 'all' | 'day') => {
+  incomingFilterMode.value = mode
+  try {
+    localStorage.setItem(INCOMING_FILTER_KEY, mode)
+  } catch { /* 保存失敗時は無視 */ }
+  fetchIncomingCalls()
+}
+
 // ドラッグによる高さ変更（Pointer Events でマウス/タッチ両対応）
 let incomingResizeStartY = 0
 let incomingResizeStartHeight = 0
@@ -161,6 +179,19 @@ const editingId = ref<string | null>(null)
 const newReservation = ref({
   staff_id: '', start_time: '', end_time: '', customer_name: '', customer_phone: '', customer_id: '', record_number: '', selectedMenuIds: [] as string[], note: ''
 })
+
+// 時間枠確保（顧客情報なしの空枠）の定数
+const BLOCK_NOTE = '時間枠確保（予約情報未入力）'
+// 着信からの予約作成: 枠選択モード用の保持情報
+interface PendingCallInfo {
+  phone: string
+  customerId: string
+  customerName: string
+  recordNumber: string
+}
+const pendingCallInfo = ref<PendingCallInfo | null>(null)
+// 時間枠確保かどうかの判定（顧客名・顧客IDが空の予約）
+const isBlockReservation = (res: Reservation) => !res.customer_id && !(res.customer_name || '').trim()
 
 // 顧客サジェスト用
 const customerSuggestions = ref<Array<{ id: string, name: string, phone: string, record_number?: string }>>([])
@@ -584,18 +615,29 @@ const fetchCustomersOnce = async () => {
   }
 }
 
-// 選択日の着信を取得（タイムラインと同じ日付範囲: 当日0:00〜翌日0:00）
+// 着信履歴を取得（デフォルト: 全件・着信日時降順 / トグルで当日のみに切替可）
+const INCOMING_ALL_LIMIT = 100 // 全件表示時の上限
 const fetchIncomingCalls = async () => {
   try {
-    const startOfDay = new Date(selectedDate.value); startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay = new Date(selectedDate.value); endOfDay.setDate(endOfDay.getDate() + 1); endOfDay.setHours(0, 0, 0, 0)
-
-    const qCalls = query(
-      collection(db, 'incoming_calls'),
-      where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
-      where('createdAt', '<', Timestamp.fromDate(endOfDay)),
-      orderBy('createdAt', 'desc')
-    )
+    let qCalls
+    if (incomingFilterMode.value === 'day') {
+      // 当日のみ（タイムラインと同じ日付範囲: 当日0:00〜翌日0:00）
+      const startOfDay = new Date(selectedDate.value); startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(selectedDate.value); endOfDay.setDate(endOfDay.getDate() + 1); endOfDay.setHours(0, 0, 0, 0)
+      qCalls = query(
+        collection(db, 'incoming_calls'),
+        where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
+        where('createdAt', '<', Timestamp.fromDate(endOfDay)),
+        orderBy('createdAt', 'desc')
+      )
+    } else {
+      // 全件（着信日時の降順: 最新が一番上、上限あり）
+      qCalls = query(
+        collection(db, 'incoming_calls'),
+        orderBy('createdAt', 'desc'),
+        limit(INCOMING_ALL_LIMIT)
+      )
+    }
 
     const snap = await getDocs(qCalls)
     incomingCalls.value = snap.docs.map(doc => {
@@ -624,6 +666,13 @@ const formatCallTime = (ts: Timestamp) => {
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// 全件表示時の日付表示（例: 9/11）
+const formatCallDate = (ts: Timestamp) => {
+  if (!ts) return ''
+  const d = ts.toDate()
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
 // 着信から予約作成（既存の着信クエリ導線を流用）
 const createReservationFromCall = (call: IncomingCall) => {
   const customer = findCustomerForCall(call.phoneNumber)
@@ -631,7 +680,7 @@ const createReservationFromCall = (call: IncomingCall) => {
     path: '/admin',
     query: {
       phone: call.phoneNumber,
-      ...(customer ? { customerId: customer.id } : {})
+      ...(customer ? { customerId: customer.id, customerName: customer.name_kana || customer.name_kanji || '' } : {})
     }
   })
 }
@@ -986,50 +1035,38 @@ const handleRecordNumberInput = async (event: Event) => {
 }
 
 // --- CTI着信からの予約登録ハンドラ ---
+// 着信情報を保持して「枠選択モード」に入る（フォームは直接開かない）
 const handleIncomingCallReservation = async () => {
   const phone = route.query.phone as string | undefined
   const customerId = route.query.customerId as string | undefined
   const customerName = route.query.customerName as string | undefined
 
   if (phone) {
-    // カルテ番号を取得（既存顧客の場合）
+    // 顧客情報を取得（カルテ番号＋名前。クエリに名前が無い場合の補完も兼ねる）
     let recordNumber = ''
+    let resolvedName = customerName || ''
     if (customerId) {
       try {
         const customerDoc = await getDoc(doc(db, 'customers', customerId))
         if (customerDoc.exists()) {
-          recordNumber = customerDoc.data().record_number || ''
+          const data = customerDoc.data()
+          recordNumber = data.record_number || ''
+          if (!resolvedName) {
+            resolvedName = data.name_kana || data.name_kanji || ''
+          }
         }
       } catch (e) {
-        console.error('カルテ番号取得エラー:', e)
+        console.error('顧客情報取得エラー:', e)
       }
     }
 
-    // 現在時刻の直近15分刻みを開始日時の初期値にする
-    const now = new Date()
-    const minutes = Math.ceil(now.getMinutes() / 15) * 15
-    now.setMinutes(minutes, 0, 0)
-
-    isEditing.value = false
-    editingId.value = null
-
-    // 予約フォームの初期化
-    // ※ 担当者は空のまま。予約モーダル冒頭で必須選択させる（案A）
-    newReservation.value = {
-      staff_id: '',
-      start_time: toLocalISOString(now),
-      end_time: '',
-      customer_name: customerName || '',
-      customer_phone: formatPhoneNumber(phone),
-      customer_id: customerId || '',
-      record_number: recordNumber,
-      selectedMenuIds: [],
-      note: '【電話受付】'
+    // 着信情報を保持し、タイムラインから確保済み枠を選択するモードに入る
+    pendingCallInfo.value = {
+      phone,
+      customerId: customerId || '',
+      customerName: resolvedName,
+      recordNumber
     }
-
-    resetMenuFilters()
-    // 予約作成モーダルを開く（showModalを使用）
-    showModal.value = true
 
     // URLからクエリパラメータを除去（画面リロード時の重複展開防止）
     router.replace({ path: '/admin', query: {} })
@@ -1383,7 +1420,25 @@ const approveReservation = async (res: Reservation) => {
 }
 
 // 予約詳細を開く（履歴取得も行う）
+// ※着信からの予約作成モード中は、確保済みの空枠を選択して編集フォームを開く
 const openReservationDetail = async (res: Reservation) => {
+  if (pendingCallInfo.value) {
+    if (isBlockReservation(res)) {
+      await openEditModal(res)
+      // 着信情報をフォームにプリセット
+      newReservation.value.customer_phone = formatPhoneNumber(pendingCallInfo.value.phone)
+      newReservation.value.customer_id = pendingCallInfo.value.customerId
+      newReservation.value.customer_name = pendingCallInfo.value.customerName
+      newReservation.value.record_number = pendingCallInfo.value.recordNumber
+      if (!newReservation.value.note) {
+        newReservation.value.note = '【電話受付】'
+      }
+      pendingCallInfo.value = null
+    } else {
+      await dialog.alert('この予約枠は既に顧客情報が登録されています。\n【枠】と表示された空の時間枠を選択してください。', '枠の選択')
+    }
+    return
+  }
   selectedReservation.value = res
   showDetailModal.value = true
   customerHistory.value = []
@@ -1488,17 +1543,61 @@ const onMouseMove = (e: MouseEvent) => {
   const roundedDate = new Date(Math.ceil(date.getTime() / (900000)) * 900000)
   if (roundedDate > dragStartTime.value) dragEndTime.value = roundedDate
 }
-const onMouseUp = () => {
+const onMouseUp = async () => {
   if (!isDragging.value || !dragStaffId.value || !dragStartTime.value || !dragEndTime.value) { isDragging.value = false; return }
-  isEditing.value = false; editingId.value = null
-  newReservation.value = {
-    staff_id: dragStaffId.value,
-    start_time: toLocalISOString(dragStartTime.value),
-    end_time: '',
-    customer_name: '', customer_phone: '', customer_id: '', record_number: '', selectedMenuIds: [], note: ''
+  const staffId = dragStaffId.value
+  const startTime = new Date(dragStartTime.value)
+  const endTime = new Date(dragEndTime.value)
+  isDragging.value = false; dragStaffId.value = null
+
+  // 1. まず時間枠確保をコミット（顧客名は空。後から予約情報を入力できる）
+  let blockId = ''
+  try {
+    const docRef = await addDoc(collection(db, 'reservations'), {
+      staff_id: staffId,
+      start_at: Timestamp.fromDate(startTime),
+      end_at: Timestamp.fromDate(endTime),
+      customer_name: '',
+      customer_phone: '',
+      menu_items: [],
+      total_price: 0,
+      total_duration_min: 0,
+      source: 'phone',
+      note: BLOCK_NOTE,
+      status: 'confirmed',
+      created_at: Timestamp.now()
+    })
+    blockId = docRef.id
+  } catch (e) {
+    console.error('時間枠確保エラー:', e)
+    dialog.alert('時間枠の確保に失敗しました', 'エラー')
+    return
   }
-  resetMenuFilters()
-  showModal.value = true; isDragging.value = false; dragStaffId.value = null
+
+  // 2. 入力フォームを表示するか確認（キャンセルなら枠確保のまま終了）
+  const openForm = await dialog.confirm(
+    '時間枠を確保しました。\n続けて予約情報の入力フォームを表示しますか？\n（キャンセルした場合は枠確保のみで、あとから編集できます）',
+    '予約情報の入力'
+  )
+  if (openForm && blockId) {
+    const block = dayReservations.value.find(r => r.id === blockId)
+    if (block) {
+      openEditModal(block)
+    } else {
+      // リアルタイム反映前でも開けるようフォールバック
+      openEditModal({
+        id: blockId,
+        staff_id: staffId,
+        start_at: Timestamp.fromDate(startTime),
+        end_at: Timestamp.fromDate(endTime),
+        menu_items: [],
+        status: 'confirmed',
+        customer_name: '',
+        customer_phone: '',
+        note: BLOCK_NOTE
+      })
+    }
+  }
 }
 const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
 const formatDate = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getMonth() + 1}/${d.getDate()}` }
@@ -1520,6 +1619,11 @@ const getDragBarStyle = computed(() => {
   return { left: `${left}%`, width: `${width}%` }
 })
 const getTooltipText = (res: Reservation) => {
+  if (isBlockReservation(res)) {
+    let text = `【時間枠確保】\n${formatTime(res.start_at)} - ${formatTime(res.end_at)}\n（予約情報は未入力です。クリックして編集できます）`
+    if (res.note) text += `\n📝 ${res.note}`
+    return text
+  }
   const sourceType = res.source === 'phone' ? '【電話】' : '【WEB】'
   const statusText = res.status === 'pending' ? '【仮予約】' : ''
   let text = `${statusText}${sourceType}\n${formatTime(res.start_at)} - ${formatTime(res.end_at)}\n${res.menu_items[0]?.title}\n${res.customer_name || '名称未設定'}`
@@ -1527,11 +1631,19 @@ const getTooltipText = (res: Reservation) => {
   return text
 }
 const getReservationClass = (res: Reservation) => {
+  if (isBlockReservation(res)) return 'res-block'
   if (res.status === 'pending') return 'res-pending'
   return res.source === 'phone' ? 'res-phone' : 'res-web'
 }
 const getReservationStyle = (res: Reservation) => {
   const baseColor = getStaffColor(res.staff_id)
+  if (isBlockReservation(res)) {
+    return {
+      backgroundColor: '#9aa5ad',
+      backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.25) 5px, rgba(255, 255, 255, 0.25) 10px)',
+      border: '1px dashed #6c7a83'
+    }
+  }
   if (res.status === 'pending') {
     return {
       backgroundColor: baseColor,
@@ -1990,6 +2102,15 @@ const exportReservationsToExcel = async () => {
           <button class="today-btn" @click="selectedDate = new Date()">今日</button>
         </div>
 
+        <!-- 着信からの予約作成: 枠選択モードのバナー -->
+        <div v-if="pendingCallInfo" class="call-select-banner">
+          <span>
+            📞 着信の予約を作成中：タイムライン上の <strong>【枠】</strong>（時間枠確保）を選択してください
+            <template v-if="pendingCallInfo.customerName">（{{ pendingCallInfo.customerName }} 様）</template>
+          </span>
+          <button class="banner-cancel-btn" @click="pendingCallInfo = null">キャンセル</button>
+        </div>
+
         <div class="timeline-container">
           <div class="timeline-header">
             <div class="staff-header-cell"></div>
@@ -2012,7 +2133,8 @@ const exportReservationsToExcel = async () => {
                       :title="getTooltipText(res)" @mousedown.stop @click.stop="openReservationDetail(res)">
                       <span class="bar-text">
                         <span v-if="res.status === 'pending'">【未】</span>
-                        {{ res.menu_items[0]?.title }}
+                        <span v-else-if="isBlockReservation(res)">【枠】</span>
+                        {{ isBlockReservation(res) ? '時間枠確保' : res.menu_items[0]?.title }}
                       </span>
                     </div>
                   </template>
@@ -2024,14 +2146,20 @@ const exportReservationsToExcel = async () => {
           </div>
         </div>
 
-        <!-- 着信履歴セクション（選択日と連動、既定で開く） -->
+        <!-- 着信履歴セクション（デフォルト全件・トグルで当日のみに切替可、既定で開く） -->
         <div class="history-section">
           <div class="history-header incoming-header">
             <button @click="showIncomingCalls = !showIncomingCalls" class="history-toggle-btn">
               <span class="toggle-icon">{{ showIncomingCalls ? '▼' : '▶' }}</span>
-              <h3 style="margin: 0;">📞 着信履歴（{{ formatDateJP(selectedDate) }}）</h3>
+              <h3 style="margin: 0;">📞 着信履歴（{{ incomingFilterMode === 'day' ? formatDateJP(selectedDate) : '全件' }}）</h3>
               <span class="history-count">{{ incomingCalls.length }}件</span>
             </button>
+            <div class="incoming-filter-toggle">
+              <button :class="['filter-toggle-btn', { active: incomingFilterMode === 'all' }]"
+                @click="toggleIncomingFilter('all')">全件</button>
+              <button :class="['filter-toggle-btn', { active: incomingFilterMode === 'day' }]"
+                @click="toggleIncomingFilter('day')">当日のみ</button>
+            </div>
             <button @click="router.push('/admin/incoming-calls')" class="incoming-calls-link-btn">
               着信履歴画面へ →
             </button>
@@ -2039,14 +2167,22 @@ const exportReservationsToExcel = async () => {
 
           <transition name="slide-down">
             <div v-if="showIncomingCalls" class="history-content">
+              <div
+                class="incoming-list-resize-handle"
+                title="ドラッグして高さを変更"
+                @pointerdown.prevent="startIncomingResize"
+              >
+                <span class="resize-grip"></span>
+              </div>
               <div v-if="incomingCalls.length === 0" class="no-data">
-                この日の着信はありません
+                {{ incomingFilterMode === 'day' ? 'この日の着信はありません' : '着信履歴がありません' }}
               </div>
 
               <template v-else>
                 <div class="incoming-call-list" :style="incomingListStyle">
                   <div v-for="call in incomingCalls" :key="call.id" class="incoming-call-card">
                     <div class="call-info">
+                      <span v-if="incomingFilterMode === 'all'" class="call-date">{{ formatCallDate(call.createdAt) }}</span>
                       <span class="call-time">{{ formatCallTime(call.createdAt) }}</span>
                       <span class="call-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
                       <template v-if="findCustomerForCall(call.phoneNumber)">
@@ -2059,13 +2195,6 @@ const exportReservationsToExcel = async () => {
                     </div>
                     <button class="reserve-btn" @click="createReservationFromCall(call)">📝 予約作成</button>
                   </div>
-                </div>
-                <div
-                  class="incoming-list-resize-handle"
-                  title="ドラッグして高さを変更"
-                  @pointerdown.prevent="startIncomingResize"
-                >
-                  <span class="resize-grip"></span>
                 </div>
               </template>
             </div>
@@ -3748,6 +3877,80 @@ textarea {
 .incoming-calls-link-btn:hover {
   background: #3498db;
   color: white;
+}
+
+/* 着信履歴 全件/当日 トグル */
+.incoming-filter-toggle {
+  display: flex;
+  gap: 0;
+  margin-right: 0.5rem;
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.filter-toggle-btn {
+  padding: 0.35rem 0.8rem;
+  background: transparent;
+  border: none;
+  color: #3498db;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.filter-toggle-btn + .filter-toggle-btn {
+  border-left: 1px solid #3498db;
+}
+
+.filter-toggle-btn.active {
+  background: #3498db;
+  color: #fff;
+  font-weight: bold;
+}
+
+.filter-toggle-btn:not(.active):hover {
+  background: #eaf4fb;
+}
+
+/* 着信履歴 全件表示時の日付 */
+.call-date {
+  font-size: 0.8rem;
+  color: #888;
+  min-width: 36px;
+  white-space: nowrap;
+}
+
+/* 着信からの予約作成: 枠選択モードのバナー */
+.call-select-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.5rem;
+  background: #fff8e1;
+  border: 1px solid #f0c36d;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #7a5b00;
+}
+
+.banner-cancel-btn {
+  background: transparent;
+  border: 1px solid #c9a13b;
+  color: #7a5b00;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.banner-cancel-btn:hover {
+  background: #f0c36d;
+  color: #fff;
 }
 
 .incoming-call-list {
