@@ -2172,15 +2172,17 @@ const exportReservationsToExcel = async () => {
             </button>
           </div>
 
+          <div
+            v-if="showIncomingCalls"
+            class="incoming-list-resize-handle"
+            title="ドラッグして高さを変更"
+            @pointerdown.prevent="startIncomingResize"
+          >
+            <span class="resize-grip"></span>
+          </div>
+
           <transition name="slide-down">
             <div v-if="showIncomingCalls" class="history-content">
-              <div
-                class="incoming-list-resize-handle"
-                title="ドラッグして高さを変更"
-                @pointerdown.prevent="startIncomingResize"
-              >
-                <span class="resize-grip"></span>
-              </div>
               <div v-if="incomingCalls.length === 0" class="no-data">
                 {{ incomingFilterMode === 'day' ? 'この日の着信はありません' : '着信履歴がありません' }}
               </div>
