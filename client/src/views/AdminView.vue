@@ -209,6 +209,77 @@ const showRecordSuggestions = ref(false)
 
 // 顧客登録モーダル用
 const showCustomerModal = ref(false)
+
+// 着信履歴からの顧客詳細モーダル用
+const showCustomerDetailModal = ref(false)
+const customerDetailData = ref<{
+  id: string; name_kanji?: string; name_kana: string; phone_number?: string; memo?: string
+} | null>(null)
+
+const openCustomerDetailModal = async (customerId: string) => {
+  try {
+    const snap = await getDoc(doc(db, 'customers', customerId))
+    if (snap.exists()) {
+      const data = snap.data()
+      customerDetailData.value = {
+        id: snap.id,
+        name_kanji: data.name_kanji || '',
+        name_kana: data.name_kana || '',
+        phone_number: data.phone_number || '',
+        memo: data.memo || ''
+      }
+      showCustomerDetailModal.value = true
+    } else {
+      dialog.alert('顧客情報が見つかりませんでした')
+    }
+  } catch (e) {
+    console.error('顧客詳細取得エラー:', e)
+    dialog.alert('顧客情報の取得に失敗しました')
+  }
+}
+
+// 専用モーダルから顧客管理画面の詳細（編集）モーダルへ遷移
+const goToCustomerDetailFromModal = () => {
+  if (customerDetailData.value?.id) {
+    showCustomerDetailModal.value = false
+    router.push(`/admin/customers?open_id=${customerDetailData.value.id}`)
+  }
+}
+
+// 専用モーダルからの簡易保存（漢字名・カナ名・電話番号・メモ）
+const isSavingCustomerDetail = ref(false)
+const saveCustomerDetail = async () => {
+  if (!customerDetailData.value?.id) return
+  if (!customerDetailData.value.name_kana || !customerDetailData.value.name_kana.trim()) {
+    dialog.alert('お名前（カナ）は必須です')
+    return
+  }
+  isSavingCustomerDetail.value = true
+  try {
+    await updateDoc(doc(db, 'customers', customerDetailData.value.id), {
+      name_kanji: (customerDetailData.value.name_kanji || '').trim(),
+      name_kana: customerDetailData.value.name_kana.trim(),
+      phone_number: (customerDetailData.value.phone_number || '').replace(/\D/g, ''),
+      memo: (customerDetailData.value.memo || '').trim(),
+      updated_at: Timestamp.now()
+    })
+    // 着信履歴照合用のキャッシュ（allCustomers）も更新して即座に画面反映
+    const cached = allCustomers.value.find(c => c.id === customerDetailData.value!.id)
+    if (cached) {
+      cached.name_kanji = (customerDetailData.value.name_kanji || '').trim()
+      cached.name_kana = customerDetailData.value.name_kana.trim()
+      cached.phoneClean = cleanPhoneNumber(customerDetailData.value.phone_number || '')
+    }
+    dialog.alert('顧客情報を保存しました')
+    showCustomerDetailModal.value = false
+  } catch (e) {
+    console.error('顧客詳細保存エラー:', e)
+    dialog.alert('保存に失敗しました')
+  } finally {
+    isSavingCustomerDetail.value = false
+  }
+}
+
 const newCustomer = ref({
   name_kana: '',
   phone_number: '',
@@ -2219,7 +2290,7 @@ const exportReservationsToExcel = async () => {
                       <span class="call-time">{{ formatCallTime(call.createdAt) }}</span>
                       <span class="call-phone">{{ call.phoneNumber || '(番号なし)' }}</span>
                       <template v-if="findCustomerForCall(call.phoneNumber)">
-                        <span class="call-customer">
+                        <span class="call-customer clickable" @click="openCustomerDetailModal(findCustomerForCall(call.phoneNumber)!.id)">
                           {{ findCustomerForCall(call.phoneNumber)?.name_kanji || '-' }}
                           <span class="call-kana">{{ findCustomerForCall(call.phoneNumber)?.name_kana }}</span>
                         </span>
@@ -2514,6 +2585,42 @@ const exportReservationsToExcel = async () => {
         </div>
         <div class="modal-actions right-align">
           <button class="save-btn" @click="saveCustomer">保存する</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 着信履歴からの顧客詳細モーダル（編集可能） -->
+    <div v-if="showCustomerDetailModal" class="modal-overlay" @click.self="showCustomerDetailModal = false">
+      <div class="modal-content">
+        <div class="modal-header-row">
+          <h3>顧客詳細</h3>
+          <button class="close-x-btn" @click="showCustomerDetailModal = false">×</button>
+        </div>
+        <div v-if="customerDetailData" class="customer-detail-body">
+          <div class="form-group">
+            <label>お名前（漢字）</label>
+            <input type="text" v-model="customerDetailData.name_kanji" placeholder="例: 山田太郎">
+          </div>
+          <div class="form-group">
+            <label>お名前（カナ） <span style="color: #e74c3c;">*</span></label>
+            <input type="text" v-model="customerDetailData.name_kana" placeholder="例: ヤマダタロウ">
+          </div>
+          <div class="form-group">
+            <label>電話番号</label>
+            <input type="tel" v-model="customerDetailData.phone_number"
+              @input="(e) => customerDetailData!.phone_number = formatPhoneNumber((e.target as HTMLInputElement).value)"
+              placeholder="例: 090-1234-5678">
+          </div>
+          <div class="form-group">
+            <label>顧客メモ</label>
+            <textarea v-model="customerDetailData.memo" placeholder="特記事項など"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions split">
+          <button class="edit-btn" @click="goToCustomerDetailFromModal">顧客管理画面で詳細を見る →</button>
+          <button class="save-btn" :disabled="isSavingCustomerDetail" @click="saveCustomerDetail">
+            {{ isSavingCustomerDetail ? '保存中...' : '保存する' }}
+          </button>
         </div>
       </div>
     </div>
@@ -4107,6 +4214,29 @@ textarea {
   color: #888;
   font-size: 0.85rem;
   margin-left: 0.5rem;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  text-decoration: underline;
+  color: #2980b9;
+}
+
+.customer-detail-body .detail-value {
+  margin: 0 0 0.5rem 0;
+  padding: 0.4rem 0.6rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.customer-detail-body .detail-value.memo {
+  min-height: 2.5rem;
 }
 
 .call-unknown {
