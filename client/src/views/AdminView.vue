@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { db, auth, messaging, VAPID_KEY } from '../lib/firebase'
 import { collection, getDocs, setDoc, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where, limit, Timestamp, onSnapshot, getDoc, type Unsubscribe } from 'firebase/firestore'
 import { useRoute, useRouter } from 'vue-router'
@@ -697,7 +697,7 @@ const createReservationFromCall = (call: IncomingCall) => {
     path: '/admin',
     query: {
       phone: call.phoneNumber,
-      ...(customer ? { customerId: customer.id, customerName: customer.name_kana || customer.name_kanji || '' } : {})
+      ...(customer ? { customerId: customer.id, customerName: customer.name_kanji || customer.name_kana || '' } : {})
     }
   })
 }
@@ -1069,7 +1069,7 @@ const handleIncomingCallReservation = async () => {
           const data = customerDoc.data()
           recordNumber = data.record_number || ''
           if (!resolvedName) {
-            resolvedName = data.name_kana || data.name_kanji || ''
+            resolvedName = data.name_kanji || data.name_kana || ''
           }
         }
       } catch (e) {
@@ -1525,6 +1525,13 @@ const openEditModal = async (res: Reservation) => {
   showModal.value = true
   customerSuggestions.value = []
   showSuggestions.value = false
+
+  // start_time を監視している watch(updateEndTime) が、メニュー未選択（selectedMenuIds が空）の場合に
+  // end_time を空文字でクリアしてしまうため、反映後に確保済みの終了時刻へ再設定する
+  await nextTick()
+  if (matchedMenuIds.length === 0) {
+    newReservation.value.end_time = toLocalISOString(res.end_at.toDate())
+  }
 }
 
 const getLeftPosition = (startTs: Timestamp) => {
