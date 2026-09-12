@@ -1677,10 +1677,10 @@ const onMouseUp = async () => {
   if (openForm && blockId) {
     const block = dayReservations.value.find(r => r.id === blockId)
     if (block) {
-      openEditModal(block)
+      await openEditModal(block)
     } else {
       // リアルタイム反映前でも開けるようフォールバック
-      openEditModal({
+      await openEditModal({
         id: blockId,
         staff_id: staffId,
         start_at: Timestamp.fromDate(startTime),
@@ -1691,6 +1691,17 @@ const onMouseUp = async () => {
         customer_phone: '',
         note: BLOCK_NOTE
       })
+    }
+    // 着信対応中であれば、確保した枠に着信の顧客情報をプリセットする
+    if (pendingCallInfo.value) {
+      newReservation.value.customer_phone = formatPhoneNumber(pendingCallInfo.value.phone)
+      newReservation.value.customer_id = pendingCallInfo.value.customerId
+      newReservation.value.customer_name = pendingCallInfo.value.customerName
+      newReservation.value.record_number = pendingCallInfo.value.recordNumber
+      if (!newReservation.value.note) {
+        newReservation.value.note = '【電話受付】'
+      }
+      pendingCallInfo.value = null
     }
   } else if (!openForm && pendingCallInfo.value) {
     // 着信対応の枠選択モード中にキャンセルした場合は、オーバーレイ/吹き出しを解除する
