@@ -3437,7 +3437,10 @@ const exportReservationsToExcel = async () => {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 1px 4px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   transition: all 0.2s;
   z-index: 1;
