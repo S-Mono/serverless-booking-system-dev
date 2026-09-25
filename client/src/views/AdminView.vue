@@ -3408,6 +3408,7 @@ const exportReservationsToExcel = async () => {
   position: relative;
   background: #fff;
   cursor: crosshair;
+  box-sizing: border-box;
 }
 
 .grid-lines {
@@ -3418,12 +3419,14 @@ const exportReservationsToExcel = async () => {
   height: 100%;
   display: flex;
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 .grid-line {
   flex: 1;
   border-right: 1px solid #ddd;
   height: 100%;
+  box-sizing: border-box;
 }
 
 .reservation-bar {
