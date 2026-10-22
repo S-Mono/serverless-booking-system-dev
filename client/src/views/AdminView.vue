@@ -2646,9 +2646,10 @@ const exportReservationsToExcel = async () => {
               <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
             </div>
             <div class="form-group">
-              <label>終了日時</label>
+              <label>終了日時
+                <span v-if="isAutoCalcEndTimeEnabled" class="hint hint-inline">※ 未入力の場合、自動計算されます</span>
+              </label>
               <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
-              <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、自動計算されます</p>
             </div>
           </div>
           <div class="section-row">
@@ -3668,6 +3669,15 @@ const exportReservationsToExcel = async () => {
   font-size: 0.8rem;
   color: #666;
   margin-top: 4px;
+}
+
+.hint-inline {
+  display: inline;
+  margin-top: 0;
+  margin-left: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: normal;
+  white-space: nowrap;
 }
 
 /* リンクテキストボタン */
