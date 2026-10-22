@@ -32,6 +32,7 @@ interface Reservation {
   id: string; start_at: Timestamp; end_at: Timestamp; staff_id: string
   customer_id?: string; // 👈 追加
   customer_name?: string; customer_phone?: string; menu_items: { title: string; duration: number; price?: number }[]; status: string; source?: 'web' | 'phone'; note?: string; total_price?: number; total_duration_min?: number
+  is_block?: boolean // 👈 業務外予定（時間枠確保）かどうかを明示するフラグ
 }
 interface Menu {
   id: string; title: string; duration_min: number; price: number
@@ -226,8 +227,13 @@ interface PendingCallInfo {
   recordNumber: string
 }
 const pendingCallInfo = ref<PendingCallInfo | null>(null)
-// 時間枠確保かどうかの判定（顧客名・顧客IDが空の予約）
-const isBlockReservation = (res: Reservation) => !res.customer_id && !(res.customer_name || '').trim()
+// 時間枠確保（業務外予定）かどうかの判定
+// 👉 is_block フラグを正とする。未設定の既存データは note が BLOCK_NOTE と一致する場合のみ後方互換でブロック扱いとする
+// （「枠確保のみ」で作成しただけの空枠は is_block=false のため、ここでは業務外予定とみなさない）
+const isBlockReservation = (res: Reservation) => {
+  if (typeof res.is_block === 'boolean') return res.is_block
+  return !res.customer_id && !(res.customer_name || '').trim() && res.note === BLOCK_NOTE
+}
 
 // 顧客サジェスト用
 const customerSuggestions = ref<Array<{ id: string, name: string, phone: string, record_number?: string }>>([])
@@ -1342,7 +1348,8 @@ const submitReservation = async () => {
     menu_items: menuItems,
     total_price: totalPrice,
     total_duration_min: totalDuration,
-    source: 'phone', note: newReservation.value.note || '', status: 'confirmed'
+    source: 'phone', note: newReservation.value.note || '', status: 'confirmed',
+    is_block: false // 👈 通常予約として確定保存するため、業務外予定フラグは明示的に解除する
   }
 
   // customer_idがあれば追加
@@ -1714,7 +1721,8 @@ const submitBlockEdit = async () => {
       staff_id: form.staff_id,
       start_at: Timestamp.fromDate(startDate),
       end_at: Timestamp.fromDate(endDate),
-      note: form.note.trim() || BLOCK_NOTE
+      note: form.note.trim() || BLOCK_NOTE,
+      is_block: true // 👈 業務外予定として確定保存するため、フラグを明示的に立てる
     })
     await dialog.alert('業務外予定を更新しました')
     closeBlockEditModal()
@@ -1781,7 +1789,7 @@ const onMouseUp = async () => {
   const endTime = new Date(dragEndTime.value)
   isDragging.value = false; dragStaffId.value = null
 
-  // 1. まず時間枠確保をコミット（顧客名は空。後から予約情報を入力できる）
+  // 1. まず時間枠確保をコミット（顧客名は空。後から予約情報を入力できる。is_block=false で「未確定の空枠」として保存）
   let blockId = ''
   try {
     const docRef = await addDoc(collection(db, 'reservations'), {
@@ -1796,6 +1804,7 @@ const onMouseUp = async () => {
       source: 'phone',
       note: BLOCK_NOTE,
       status: 'confirmed',
+      is_block: false,
       created_at: Timestamp.now()
     })
     blockId = docRef.id
@@ -1883,14 +1892,15 @@ const onMouseUp = async () => {
       })
     }
   } else if (!registerAsReservation && blockId) {
-    // 業務外予定にする場合、ダイアログで入力されたメモを時間枠の note として保存する
+    // 業務外予定にする場合、ダイアログで入力されたメモを時間枠の note として保存し、is_block フラグを立てる
     const memo = dialog.memoInput.trim()
-    if (memo) {
-      try {
-        await updateDoc(doc(db, 'reservations', blockId), { note: memo })
-      } catch (e) {
-        console.error('メモの保存に失敗しました:', e)
-      }
+    try {
+      await updateDoc(doc(db, 'reservations', blockId), {
+        is_block: true,
+        ...(memo ? { note: memo } : {})
+      })
+    } catch (e) {
+      console.error('業務外予定の保存に失敗しました:', e)
     }
   }
 }
