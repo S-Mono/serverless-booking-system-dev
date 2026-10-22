@@ -2330,8 +2330,18 @@ const exportReservationsToExcel = async () => {
                       <span class="bar-text">
                         <span v-if="res.status === 'pending'">【未】</span>
                         <span v-else-if="isBlockReservation(res)">【枠】</span>
-                        {{ isBlockReservation(res) ? '時間枠確保' : res.menu_items[0]?.title }}
-                        <span v-if="!isBlockReservation(res)" class="bar-customer-name">{{ getReservationDisplayName(res) }}</span>
+                        <template v-if="isBlockReservation(res)">
+                          <template v-if="res.note && res.note !== BLOCK_NOTE">
+                            <span class="bar-memo-text">📝 {{ res.note }}</span>
+                          </template>
+                          <template v-else>
+                            時間枠確保
+                          </template>
+                        </template>
+                        <template v-else>
+                          {{ res.menu_items[0]?.title }}
+                          <span class="bar-customer-name">{{ getReservationDisplayName(res) }}</span>
+                        </template>
                       </span>
                     </div>
                   </template>
@@ -3580,6 +3590,16 @@ const exportReservationsToExcel = async () => {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.bar-memo-text {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.9;
 }
 
 .reservation-bar:hover {
