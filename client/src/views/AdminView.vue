@@ -2750,8 +2750,8 @@ const exportReservationsToExcel = async () => {
         <!-- 顧客情報セクション -->
         <section class="modal-section customer-section">
           <h4 class="section-title">顧客情報</h4>
-          <div class="section-row two-col">
-            <div class="form-group">
+          <div class="section-row">
+            <div class="form-group inline-field">
               <label>電話番号 <span style="color: #e74c3c;">*</span></label>
               <div class="suggest-wrapper">
                 <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
@@ -2768,8 +2768,8 @@ const exportReservationsToExcel = async () => {
               }}</span>
             </div>
           </div>
-          <div class="section-row two-col">
-            <div class="form-group">
+          <div class="section-row">
+            <div class="form-group inline-field">
               <label>顧客名 <span style="color: #e74c3c;">*</span></label>
               <div class="suggest-wrapper">
                 <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
@@ -2784,7 +2784,9 @@ const exportReservationsToExcel = async () => {
               </div>
               <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
             </div>
-            <div class="form-group">
+          </div>
+          <div class="section-row">
+            <div class="form-group inline-field">
               <label>カルテ番号</label>
               <div class="suggest-wrapper">
                 <input type="text" v-model="newReservation.record_number" @input="handleRecordNumberInput"
@@ -3919,6 +3921,8 @@ const exportReservationsToExcel = async () => {
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  overflow-y: auto;
+  padding: 1rem 0;
 }
 
 .modal-content {
@@ -4028,11 +4032,12 @@ const exportReservationsToExcel = async () => {
 }
 
 .menu-table-wrapper {
-  max-height: 260px;
+  max-height: 230px;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
 }
+
 
 .menu-table {
   width: 100%;
@@ -4082,6 +4087,32 @@ const exportReservationsToExcel = async () => {
   text-align: center;
   color: #999;
   padding: 1rem;
+}
+
+/* 顧客情報セクション：ラベル左配置・1行表示・マージン縮小 */
+.form-group.inline-field {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.form-group.inline-field>label {
+  flex: 0 0 auto;
+  width: 5.5em;
+  padding-top: 0.5rem;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.form-group.inline-field .suggest-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-group.inline-field .error-message {
+  flex-basis: 100%;
+  margin-left: 5.5em;
 }
 
 @media (min-width: 769px) {
