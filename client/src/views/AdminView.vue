@@ -2629,7 +2629,7 @@ const exportReservationsToExcel = async () => {
         <!-- 担当セクション -->
         <section class="modal-section staff-section">
           <h4 class="section-title">担当</h4>
-          <div class="section-row">
+          <div class="section-row three-col">
             <div class="form-group staff-select-group">
               <label>担当スタッフ <span style="color: #e74c3c;">*</span></label>
               <select v-model="newReservation.staff_id" :class="{ 'input-error': validationErrors.staff }">
@@ -2639,8 +2639,6 @@ const exportReservationsToExcel = async () => {
               <span v-if="validationErrors.staff" class="error-message">{{ validationErrors.staff }}</span>
               <p v-if="!newReservation.staff_id" class="hint">※ 担当スタッフを選択すると、メニュー候補が担当者で絞り込まれます</p>
             </div>
-          </div>
-          <div class="section-row two-col">
             <div class="form-group">
               <label>開始日時 <span style="color: #e74c3c;">*</span></label>
               <input type="datetime-local" v-model="newReservation.start_time"
@@ -4165,6 +4163,22 @@ const exportReservationsToExcel = async () => {
   .reservation-modal .section-row.two-col .form-group {
     flex: 1;
     margin-bottom: 0;
+  }
+
+  .reservation-modal .section-row.three-col {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .reservation-modal .section-row.three-col .form-group {
+    flex: 1;
+    margin-bottom: 0;
+    min-width: 0;
+  }
+
+  .reservation-modal .section-row.three-col .form-group.staff-select-group {
+    flex: 1.3;
   }
 
   .reservation-modal .menu-filter-row {
