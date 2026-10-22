@@ -403,6 +403,21 @@ const totalMenuDuration = computed(() => {
   return selectedMenus.value.reduce((sum, menu) => sum + menu.duration_min, 0)
 })
 
+// 担当セクションの「所要時間」表示（開始・終了日時の差、無ければメニュー合計時間）
+const computedDurationLabel = computed(() => {
+  const { start_time, end_time } = newReservation.value
+  if (start_time && end_time) {
+    const diffMs = new Date(end_time).getTime() - new Date(start_time).getTime()
+    if (diffMs > 0) {
+      return `${Math.round(diffMs / 60000)}分`
+    }
+  }
+  if (totalMenuDuration.value > 0) {
+    return `${totalMenuDuration.value}分（メニューより自動計算）`
+  }
+  return '-'
+})
+
 // メニューを追加
 const addMenu = (menuId: string) => {
   if (!newReservation.value.selectedMenuIds.includes(menuId)) {
@@ -2605,64 +2620,121 @@ const exportReservationsToExcel = async () => {
     </div>
 
     <div v-if="showModal" class="modal-overlay" @click.self="closeReservationModal">
-      <div class="modal-content">
+      <div class="modal-content reservation-modal">
         <div class="modal-header-row">
           <h3>{{ isEditing ? '予約の編集' : '新規予約 (電話受付)' }}</h3>
-          <button class="close-x-btn" @click="closeReservationModal">×</button>
+          <button class="close-x-btn" @click="closeReservationModal" aria-label="閉じる">×</button>
         </div>
-        <div class="form-group staff-select-group">
-          <label>担当スタッフ <span style="color: #e74c3c;">*</span></label>
-          <select v-model="newReservation.staff_id" :class="{ 'input-error': validationErrors.staff }">
-            <option value="" disabled>担当スタッフを選択してください</option>
-            <option v-for="s in staffs" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select>
-          <span v-if="validationErrors.staff" class="error-message">{{ validationErrors.staff }}</span>
-          <p v-if="!newReservation.staff_id" class="hint">※ 担当スタッフを選択すると、メニュー候補が担当者で絞り込まれます</p>
-        </div>
-        <div class="form-group">
-          <label>開始日時 <span style="color: #e74c3c;">*</span></label>
-          <input type="datetime-local" v-model="newReservation.start_time"
-            :class="{ 'input-error': validationErrors.start_time }">
-          <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
-        </div>
-        <div class="form-group">
-          <label>終了日時
-            <span v-if="isAutoCalcEndTimeEnabled" style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span>
-            <span v-else style="color: #e67e22; font-size: 0.85rem;">(この担当者は自動計算OFF - 手動入力してください)</span>
-          </label>
-          <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
-          <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
-          <p v-else class="hint">※ この担当者は「終了時間を自動計算」が無効のため、終了日時を手動で入力してください</p>
-        </div>
-        <div class="form-group">
-          <label>メニュー <span style="color: #e74c3c;">*</span></label>
-          <div class="menu-filters">
-            <input type="text" v-model="menuKeyword" class="menu-keyword-input"
-              placeholder="🔍 キーワード検索（メニュー名・説明・タグ）">
-            <div class="menu-filter-row">
-              <select v-model="menuCategoryFilter" class="menu-filter-select">
-                <option value="">カテゴリ: 全て</option>
-                <option v-for="cat in menuCategories" :key="cat.id" :value="cat.key">{{ cat.label }}</option>
+
+        <!-- 担当セクション -->
+        <section class="modal-section staff-section">
+          <h4 class="section-title">担当</h4>
+          <div class="section-row">
+            <div class="form-group staff-select-group">
+              <label>担当スタッフ <span style="color: #e74c3c;">*</span></label>
+              <select v-model="newReservation.staff_id" :class="{ 'input-error': validationErrors.staff }">
+                <option value="" disabled>担当スタッフを選択してください</option>
+                <option v-for="s in staffs" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
-              <select v-model="menuTagFilter" class="menu-filter-select">
-                <option value="">タグ: 全て</option>
-                <option v-for="tag in menuTags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
-              </select>
-              <label class="staff-filter-toggle" :class="{ disabled: !newReservation.staff_id }">
-                <input type="checkbox" v-model="menuStaffFilterEnabled" :disabled="!newReservation.staff_id">
-                担当者で絞り込む
-              </label>
+              <span v-if="validationErrors.staff" class="error-message">{{ validationErrors.staff }}</span>
+              <p v-if="!newReservation.staff_id" class="hint">※ 担当スタッフを選択すると、メニュー候補が担当者で絞り込まれます</p>
             </div>
           </div>
-          <select
-            @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
-            :class="{ 'input-error': validationErrors.menus }">
-            <option value="">メニューを追加...（{{ filteredMenus.length }}件）</option>
-            <optgroup v-for="group in groupedFilteredMenus" :key="group.id" :label="group.label">
-              <option v-for="m in group.menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
-            </optgroup>
-          </select>
-          <p v-if="filteredMenus.length === 0" class="hint">条件に一致するメニューがありません。フィルタを変更してください。</p>
+          <div class="section-row two-col">
+            <div class="form-group">
+              <label>開始日時 <span style="color: #e74c3c;">*</span></label>
+              <input type="datetime-local" v-model="newReservation.start_time"
+                :class="{ 'input-error': validationErrors.start_time }">
+              <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
+            </div>
+            <div class="form-group">
+              <label>終了日時
+                <span v-if="isAutoCalcEndTimeEnabled" style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span>
+                <span v-else style="color: #e67e22; font-size: 0.85rem;">(この担当者は自動計算OFF - 手動入力してください)</span>
+              </label>
+              <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
+              <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
+              <p v-else class="hint">※ この担当者は「終了時間を自動計算」が無効のため、終了日時を手動で入力してください</p>
+            </div>
+          </div>
+          <div class="section-row">
+            <div class="duration-summary">
+              所要時間: <strong>{{ computedDurationLabel }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- メニューセクション -->
+        <section class="modal-section menu-section">
+          <h4 class="section-title">メニュー <span style="color: #e74c3c;">*</span></h4>
+          <div class="section-row">
+            <input type="text" v-model="menuKeyword" class="menu-keyword-input"
+              placeholder="🔍 キーワード検索（メニュー名・説明・タグ）">
+          </div>
+          <div class="section-row menu-filter-row">
+            <select v-model="menuCategoryFilter" class="menu-filter-select">
+              <option value="">カテゴリ: 全て</option>
+              <option v-for="cat in menuCategories" :key="cat.id" :value="cat.key">{{ cat.label }}</option>
+            </select>
+            <select v-model="menuTagFilter" class="menu-filter-select">
+              <option value="">タグ: 全て</option>
+              <option v-for="tag in menuTags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+            </select>
+          </div>
+          <div class="section-row">
+            <label class="staff-filter-toggle" :class="{ disabled: !newReservation.staff_id }">
+              <input type="checkbox" v-model="menuStaffFilterEnabled" :disabled="!newReservation.staff_id">
+              担当者で絞り込む
+            </label>
+          </div>
+
+          <!-- モバイル: プルダウンでメニュー追加 -->
+          <div class="section-row menu-picker-mobile">
+            <select
+              @change="(e) => { const target = e.target as HTMLSelectElement; if (target.value) { addMenu(target.value); target.value = '' } }"
+              :class="{ 'input-error': validationErrors.menus }">
+              <option value="">メニューを追加...（{{ filteredMenus.length }}件）</option>
+              <optgroup v-for="group in groupedFilteredMenus" :key="group.id" :label="group.label">
+                <option v-for="m in group.menus" :key="m.id" :value="m.id">{{ m.title }} ({{ m.duration_min }}分)</option>
+              </optgroup>
+            </select>
+            <p v-if="filteredMenus.length === 0" class="hint">条件に一致するメニューがありません。フィルタを変更してください。</p>
+          </div>
+
+          <!-- PC: 一覧テーブルでメニュー追加 -->
+          <div class="section-row menu-picker-desktop">
+            <div class="menu-table-wrapper">
+              <table class="menu-table">
+                <thead>
+                  <tr>
+                    <th class="col-check"></th>
+                    <th class="col-title">メニュー名</th>
+                    <th class="col-category">カテゴリ</th>
+                    <th class="col-duration">時間</th>
+                    <th class="col-price">価格</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="m in filteredMenus" :key="m.id" class="menu-row"
+                    :class="{ selected: newReservation.selectedMenuIds.includes(m.id) }"
+                    @click="newReservation.selectedMenuIds.includes(m.id) ? removeMenu(m.id) : addMenu(m.id)">
+                    <td class="col-check">
+                      <input type="checkbox" :checked="newReservation.selectedMenuIds.includes(m.id)" @click.stop
+                        @change="newReservation.selectedMenuIds.includes(m.id) ? removeMenu(m.id) : addMenu(m.id)">
+                    </td>
+                    <td class="col-title">{{ m.title }}</td>
+                    <td class="col-category">{{ menuCategories.find(c => c.key === m.category)?.label || m.category }}</td>
+                    <td class="col-duration">{{ m.duration_min }}分</td>
+                    <td class="col-price">¥{{ (m.price_with_tax ?? m.price).toLocaleString() }}</td>
+                  </tr>
+                  <tr v-if="filteredMenus.length === 0">
+                    <td colspan="5" class="no-menu-row">条件に一致するメニューがありません。フィルタを変更してください。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div v-if="selectedMenus.length > 0" class="selected-menus">
             <span v-for="menu in selectedMenus" :key="menu.id" class="menu-chip">
               {{ menu.title }} ({{ menu.duration_min }}分)
@@ -2673,56 +2745,67 @@ const exportReservationsToExcel = async () => {
             合計所要時間: <strong>{{ totalMenuDuration }}分</strong>
           </div>
           <span v-if="validationErrors.menus" class="error-message">{{ validationErrors.menus }}</span>
-        </div>
-        <div class="form-group">
-          <label>カルテ番号</label>
-          <div class="suggest-wrapper">
-            <input type="text" v-model="newReservation.record_number" @input="handleRecordNumberInput"
-              placeholder="例: K-000123">
-            <div v-if="showRecordSuggestions" class="suggestions-dropdown">
-              <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
-                @click="selectCustomer(customer)">
-                <span class="customer-name">{{ customer.record_number }} - {{ customer.name }}</span>
-                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
+        </section>
+
+        <!-- 顧客情報セクション -->
+        <section class="modal-section customer-section">
+          <h4 class="section-title">顧客情報</h4>
+          <div class="section-row two-col">
+            <div class="form-group">
+              <label>電話番号 <span style="color: #e74c3c;">*</span></label>
+              <div class="suggest-wrapper">
+                <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
+                  :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
+                <div v-if="showSuggestions" class="suggestions-dropdown">
+                  <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
+                    @click="selectCustomer(customer)">
+                    <span class="customer-name">{{ customer.name }}</span>
+                    <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
+                  </div>
+                </div>
+              </div>
+              <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
+              }}</span>
+            </div>
+          </div>
+          <div class="section-row two-col">
+            <div class="form-group">
+              <label>顧客名 <span style="color: #e74c3c;">*</span></label>
+              <div class="suggest-wrapper">
+                <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
+                  :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
+                <div v-if="showNameSuggestions" class="suggestions-dropdown">
+                  <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
+                    @click="selectCustomer(customer)">
+                    <span class="customer-name">{{ customer.name }}</span>
+                    <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
+                  </div>
+                </div>
+              </div>
+              <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
+            </div>
+            <div class="form-group">
+              <label>カルテ番号</label>
+              <div class="suggest-wrapper">
+                <input type="text" v-model="newReservation.record_number" @input="handleRecordNumberInput"
+                  placeholder="例: K-000123">
+                <div v-if="showRecordSuggestions" class="suggestions-dropdown">
+                  <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
+                    @click="selectCustomer(customer)">
+                    <span class="customer-name">{{ customer.record_number }} - {{ customer.name }}</span>
+                    <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="form-group">
-          <label>顧客名 <span style="color: #e74c3c;">*</span></label>
-          <div class="suggest-wrapper">
-            <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
-              :class="{ 'input-error': validationErrors.customer_name }" placeholder="例: 山田様">
-            <div v-if="showNameSuggestions" class="suggestions-dropdown">
-              <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
-                @click="selectCustomer(customer)">
-                <span class="customer-name">{{ customer.name }}</span>
-                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
-              </div>
-            </div>
+          <div class="section-row">
+            <button class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
           </div>
-          <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
-          <button class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
-        </div>
-        <div class="form-group">
-          <label>電話番号 <span style="color: #e74c3c;">*</span></label>
-          <div class="suggest-wrapper">
-            <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
-              :class="{ 'input-error': validationErrors.customer_phone }" placeholder="例: 090-1234-5678">
-            <div v-if="showSuggestions" class="suggestions-dropdown">
-              <div v-for="customer in customerSuggestions" :key="customer.id" class="suggestion-item"
-                @click="selectCustomer(customer)">
-                <span class="customer-name">{{ customer.name }}</span>
-                <span class="customer-phone">{{ formatPhoneNumber(customer.phone) }}</span>
-              </div>
-            </div>
+          <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
+              placeholder="特記事項..."></textarea>
           </div>
-          <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
-          }}</span>
-        </div>
-        <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
-            placeholder="特記事項..."></textarea>
-        </div>
+        </section>
         <div class="modal-actions right-align">
           <button class="save-btn" @click="submitReservation">{{ isEditing ? '更新する' : '登録する' }}</button>
         </div>
@@ -3863,17 +3946,158 @@ const exportReservationsToExcel = async () => {
 }
 
 .close-x-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.4rem;
-  color: #999;
+  background: #f1f2f6;
+  border: 1px solid #dcdde1;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  color: #636e72;
   cursor: pointer;
   line-height: 1;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
 }
 
 .close-x-btn:hover {
-  color: #333;
+  background: #e74c3c;
+  border-color: #e74c3c;
+  color: #fff;
+}
+
+/* ===== 予約登録モーダル：PC向けレイアウト ===== */
+.reservation-modal {
+  max-width: 400px;
+}
+
+.modal-section {
+  margin-bottom: 1.2rem;
+}
+
+.modal-section .section-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: bold;
+  color: #2c3e50;
+  border-left: 4px solid #3498db;
+  padding-left: 0.5rem;
+}
+
+.section-row {
+  margin-bottom: 0.6rem;
+}
+
+.section-row:last-child {
+  margin-bottom: 0;
+}
+
+.duration-summary {
+  padding: 0.5rem 0.8rem;
+  background: #eef6fc;
+  border-radius: 4px;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+/* メニューテーブル（PC向け）はデフォルト非表示、768px以上で表示 */
+.menu-picker-desktop {
+  display: none;
+}
+
+.menu-table-wrapper {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.menu-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.menu-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f5f6fa;
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #ddd;
+  z-index: 1;
+}
+
+.menu-table .col-check {
+  width: 36px;
+  text-align: center;
+}
+
+.menu-table .col-duration,
+.menu-table .col-price {
+  white-space: nowrap;
+  width: 70px;
+}
+
+.menu-row {
+  cursor: pointer;
+}
+
+.menu-row td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.menu-row:hover {
+  background: #f0f8ff;
+}
+
+.menu-row.selected {
+  background: #e3f2fd;
+}
+
+.no-menu-row {
+  text-align: center;
+  color: #999;
+  padding: 1rem;
+}
+
+@media (min-width: 769px) {
+  .reservation-modal {
+    max-width: 920px;
+    width: 95%;
+  }
+
+  .reservation-modal .section-row.two-col {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .reservation-modal .section-row.two-col .form-group {
+    flex: 1;
+    margin-bottom: 0;
+  }
+
+  .reservation-modal .menu-filter-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .reservation-modal .menu-filter-row .menu-filter-select {
+    flex: 1;
+  }
+
+  /* PCではテーブル表示を優先し、プルダウンは隠す */
+  .menu-picker-mobile {
+    display: none;
+  }
+
+  .menu-picker-desktop {
+    display: block;
+  }
 }
 
 .modal-body {
