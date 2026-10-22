@@ -3241,7 +3241,8 @@ const exportReservationsToExcel = async () => {
 }
 
 .staff-badge {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
   background: #e0e0e0;
   padding: 1px 6px;
   border-radius: 10px;
