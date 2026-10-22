@@ -234,6 +234,12 @@ const isBlockReservation = (res: Reservation) => {
   if (typeof res.is_block === 'boolean') return res.is_block
   return !res.customer_id && !(res.customer_name || '').trim() && res.note === BLOCK_NOTE
 }
+// タイムライン表示用の判定：顧客情報・メニューともに未入力の「空枠」かどうか
+// 👉 is_block の true/false に関わらず、見た目のラベル・スタイルは従来どおり統一して表示する
+//   （クリック時にどのダイアログを開くかの判定は isBlockReservation を使用し、ここでは分けない）
+const isEmptySlotReservation = (res: Reservation) =>
+  !res.customer_id && !(res.customer_name || '').trim() && (!res.menu_items || res.menu_items.length === 0)
+
 
 // 顧客サジェスト用
 const customerSuggestions = ref<Array<{ id: string, name: string, phone: string, record_number?: string }>>([])
@@ -1938,7 +1944,7 @@ const getDragBarStyle = computed(() => {
   return { left: `${left}%`, width: `${width}%` }
 })
 const getTooltipText = (res: Reservation) => {
-  if (isBlockReservation(res)) {
+  if (isEmptySlotReservation(res)) {
     let text = `【時間枠確保】\n${formatTime(res.start_at)} - ${formatTime(res.end_at)}\n（予約情報は未入力です。クリックして編集できます）`
     if (res.note) text += `\n📝 ${res.note}`
     return text
@@ -1950,13 +1956,14 @@ const getTooltipText = (res: Reservation) => {
   return text
 }
 const getReservationClass = (res: Reservation) => {
-  if (isBlockReservation(res)) return 'res-block'
+  if (isEmptySlotReservation(res)) return 'res-block'
   if (res.status === 'pending') return 'res-pending'
   return res.source === 'phone' ? 'res-phone' : 'res-web'
 }
 const getReservationStyle = (res: Reservation) => {
   const baseColor = getStaffColor(res.staff_id)
-  if (isBlockReservation(res)) {
+  if (isEmptySlotReservation(res)) {
+
     return {
       backgroundColor: '#9aa5ad',
       backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 255, 255, 0.25) 5px, rgba(255, 255, 255, 0.25) 10px)',
@@ -2493,9 +2500,9 @@ const exportReservationsToExcel = async () => {
                       :title="getTooltipText(res)" @mousedown.stop @click.stop="openReservationDetail(res)">
                       <span class="bar-text">
                         <span v-if="res.status === 'pending'">【未】</span>
-                        <span v-else-if="isBlockReservation(res) && !(res.note && res.note !== BLOCK_NOTE)">【枠】</span>
-                        <span v-else-if="isBlockReservation(res) && res.note && res.note !== BLOCK_NOTE">【予定あり】</span>
-                        <template v-if="isBlockReservation(res)">
+                        <span v-else-if="isEmptySlotReservation(res) && !(res.note && res.note !== BLOCK_NOTE)">【枠】</span>
+                        <span v-else-if="isEmptySlotReservation(res) && res.note && res.note !== BLOCK_NOTE">【予定あり】</span>
+                        <template v-if="isEmptySlotReservation(res)">
                           <template v-if="res.note && res.note !== BLOCK_NOTE">
                             <span class="bar-memo-text">📝 {{ res.note }}</span>
                           </template>
