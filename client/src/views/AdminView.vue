@@ -1871,6 +1871,19 @@ const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHo
 const formatDate = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getMonth() + 1}/${d.getDate()}` }
 const getStaffName = (id: string) => staffs.value.find(s => s.id === id)?.name || '未定'
 const getStaffColor = (id: string) => staffs.value.find(s => s.id === id)?.color || '#3498db'
+const getContrastTextColor = (hex: string) => {
+  const m = hex.replace('#', '')
+  const full = m.length === 3 ? m.split('').map(c => c + c).join('') : m
+  const r = parseInt(full.substring(0, 2), 16) || 0
+  const g = parseInt(full.substring(2, 4), 16) || 0
+  const b = parseInt(full.substring(4, 6), 16) || 0
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.6 ? '#333333' : '#ffffff'
+}
+const getStaffBadgeStyle = (id: string) => {
+  const color = getStaffColor(id)
+  return { backgroundColor: color, color: getContrastTextColor(color), border: `1px solid ${color}` }
+}
 const toLocalISOString = (date: Date) => {
   const pad = (n: number) => n < 10 ? '0' + n : n
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes())
@@ -2363,10 +2376,10 @@ const exportReservationsToExcel = async () => {
                   <div class="details">
                     <div class="menu-title">{{ res.menu_items[0]?.title }}</div>
                     <div class="customer-info">
-                      <div v-if="res.customer_name" class="c-row"><span class="icon">👤</span> {{ res.customer_name }}
+                      <div v-if="res.customer_name" class="c-row"><span class="icon">👤</span> <span class="customer-name-text">{{ res.customer_name }}</span>
                       </div>
                     </div>
-                    <div class="staff-badge">担当: {{ getStaffName(res.staff_id) }}</div>
+                    <div class="staff-badge" :style="getStaffBadgeStyle(res.staff_id)">担当: {{ getStaffName(res.staff_id) }}</div>
                   </div>
                 </div>
               </transition-group>
@@ -3236,6 +3249,11 @@ const exportReservationsToExcel = async () => {
   gap: 4px;
 }
 
+.customer-name-text {
+  font-size: 0.9875rem;
+  font-weight: 600;
+}
+
 .icon {
   font-size: 0.7rem;
 }
@@ -3243,11 +3261,9 @@ const exportReservationsToExcel = async () => {
 .staff-badge {
   font-size: 0.8125rem;
   font-weight: 700;
-  background: #e0e0e0;
   padding: 1px 6px;
   border-radius: 10px;
   display: inline-block;
-  color: #555;
   align-self: flex-start;
   margin-top: 2px;
 }
