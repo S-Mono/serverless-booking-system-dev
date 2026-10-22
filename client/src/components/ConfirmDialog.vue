@@ -14,10 +14,30 @@ const handleConfirm = () =>
   dialogStore.resolve(true)
   dialogStore.close()
 }
+
+const handleThird = () =>
+{
+  dialogStore.resolve('skip')
+  dialogStore.close()
+}
+
+// thirdText指定時はオーバーレイクリック（ダイアログ外クリック）を「skip」扱いにする
+// （未指定時は従来通りキャンセル扱い）
+const handleOverlayClick = () =>
+{
+  if (dialogStore.options.alertOnly) return
+  if (dialogStore.options.thirdText)
+  {
+    handleThird()
+  } else
+  {
+    handleCancel()
+  }
+}
 </script>
 
 <template>
-  <div v-if="dialogStore.isOpen" class="dialog-overlay" @click.self="!dialogStore.options.alertOnly && handleCancel">
+  <div v-if="dialogStore.isOpen" class="dialog-overlay" @click.self="handleOverlayClick">
     <div class="dialog-content" :class="dialogStore.options.type">
       <h3>{{ dialogStore.options.title || '確認' }}</h3>
       <p class="dialog-message">{{ dialogStore.message }}</p>
@@ -31,6 +51,13 @@ const handleConfirm = () =>
       ></textarea>
 
       <div class="dialog-actions">
+        <button
+          v-if="dialogStore.options.thirdText"
+          class="third-btn"
+          @click="handleThird">
+          {{ dialogStore.options.thirdText }}
+        </button>
+
         <button
           v-if="!dialogStore.options.alertOnly"
           class="cancel-btn"
@@ -113,7 +140,8 @@ h3 {
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 button {
@@ -131,6 +159,16 @@ button {
 
 .cancel-btn:hover {
   background: #e0e0e0;
+}
+
+.third-btn {
+  background: #fff;
+  color: #3498db;
+  border: 1px solid #3498db;
+}
+
+.third-btn:hover {
+  background: #eaf4fc;
 }
 
 .confirm-btn {

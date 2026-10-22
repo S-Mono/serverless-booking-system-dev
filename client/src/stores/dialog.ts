@@ -10,6 +10,7 @@ interface DialogOptions
     alertOnly?: boolean // trueならキャンセルボタンなし(alert代わり)
     showMemoInput?: boolean // trueならメモ入力欄を表示する
     memoPlaceholder?: string // メモ入力欄のプレースホルダー
+    thirdText?: string // 指定時のみ第3の選択肢ボタンを表示する（例：「予約枠の確保のみ」）
 }
 
 export const useDialogStore = defineStore('dialog', () =>
@@ -20,7 +21,8 @@ export const useDialogStore = defineStore('dialog', () =>
     const memoInput = ref('') // メモ入力欄の値（showMemoInput時のみ使用）
 
     // Promiseの解決関数を保持する変数
-    let resolvePromise: (value: boolean) => void = () => { }
+    // true: 確定(confirm), false: キャンセル(cancel), 'skip': 第3の選択肢（thirdText指定時のみ）
+    let resolvePromise: (value: boolean | 'skip') => void = () => { }
 
     const open = (msg: string, opts: DialogOptions = {}) =>
     {
@@ -29,7 +31,7 @@ export const useDialogStore = defineStore('dialog', () =>
         memoInput.value = ''
         isOpen.value = true
 
-        return new Promise<boolean>((resolve) =>
+        return new Promise<boolean | 'skip'>((resolve) =>
         {
             resolvePromise = resolve
         })
@@ -40,7 +42,7 @@ export const useDialogStore = defineStore('dialog', () =>
         isOpen.value = false
     }
 
-    const resolve = (result: boolean) =>
+    const resolve = (result: boolean | 'skip') =>
     {
         resolvePromise(result)
     }

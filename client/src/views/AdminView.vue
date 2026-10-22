@@ -1847,18 +1847,23 @@ const onMouseUp = async () => {
   }
 
   // 通常のドラッグ操作（着信対応中ではない）の場合は、
-  // 「予約を登録する」か「業務外予定にする」かを選択させる（業務外予定選択時はメモも同時入力可能）
+  // 「予約を登録する」か「業務外予定にする」か「予約枠の確保のみ」かを選択させる（業務外予定選択時はメモも同時入力可能）
   const registerAsReservation = await dialog.open(
-    '時間枠を確保しました。\nこの枠をどちらで使用しますか？\n（業務外予定の場合は、下の欄に予定内容を入力できます）',
+    '時間枠を確保しました。\nこの枠をどちらで使用しますか？\n（業務外予定の場合は、下の欄に予定内容を入力できます）\n（ダイアログ外をクリックした場合は、予約枠の確保のみを行います）',
     {
       title: '枠の利用方法を選択',
       type: 'normal',
       cancelText: '業務外予定にする',
       confirmText: '予約を登録する',
+      thirdText: '予約枠の確保のみ',
       showMemoInput: true,
       memoPlaceholder: '例：会議、休憩、来客対応 など'
     }
   )
+  if (registerAsReservation === 'skip') {
+    // 予約枠の確保のみ（ダイアログ外クリックも同様）：これ以上の処理は不要
+    return
+  }
   if (registerAsReservation && blockId) {
     const block = dayReservations.value.find(r => r.id === blockId)
     if (block) {
@@ -2799,7 +2804,8 @@ const exportReservationsToExcel = async () => {
               placeholder="特記事項..."></textarea>
           </div>
         </section>
-        <div class="modal-actions right-align">
+        <div class="modal-actions split sticky-actions">
+          <button class="cancel-btn" @click="closeReservationModal">キャンセル</button>
           <button class="save-btn" @click="submitReservation">{{ isEditing ? '更新する' : '登録する' }}</button>
         </div>
       </div>
@@ -3675,7 +3681,7 @@ const exportReservationsToExcel = async () => {
   display: inline;
   margin-top: 0;
   margin-left: 0.4rem;
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: normal;
   white-space: nowrap;
 }
@@ -4251,6 +4257,21 @@ textarea {
 
 .reservation-modal textarea {
   min-height: 55px;
+}
+
+.sticky-actions {
+  position: sticky;
+  bottom: -1.5rem;
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+  margin-bottom: -1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: #fff;
+  border-top: 1px solid #e3e7eb;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+  z-index: 5;
 }
 
 .modal-actions {
