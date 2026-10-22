@@ -22,6 +22,14 @@ const handleConfirm = () =>
       <h3>{{ dialogStore.options.title || '確認' }}</h3>
       <p class="dialog-message">{{ dialogStore.message }}</p>
 
+      <textarea
+        v-if="dialogStore.options.showMemoInput"
+        v-model="dialogStore.memoInput"
+        class="dialog-memo-input"
+        :placeholder="dialogStore.options.memoPlaceholder || 'メモを入力（任意）'"
+        rows="3"
+      ></textarea>
+
       <div class="dialog-actions">
         <button
           v-if="!dialogStore.options.alertOnly"
@@ -88,6 +96,18 @@ h3 {
   margin-bottom: 1.5rem;
   color: #555;
   line-height: 1.5;
+}
+
+.dialog-memo-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: vertical;
 }
 
 .dialog-actions {

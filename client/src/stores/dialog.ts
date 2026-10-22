@@ -8,6 +8,8 @@ interface DialogOptions
     cancelText?: string
     type?: 'normal' | 'danger' | 'warning'
     alertOnly?: boolean // trueならキャンセルボタンなし(alert代わり)
+    showMemoInput?: boolean // trueならメモ入力欄を表示する
+    memoPlaceholder?: string // メモ入力欄のプレースホルダー
 }
 
 export const useDialogStore = defineStore('dialog', () =>
@@ -15,6 +17,7 @@ export const useDialogStore = defineStore('dialog', () =>
     const isOpen = ref(false)
     const message = ref('')
     const options = ref<DialogOptions>({})
+    const memoInput = ref('') // メモ入力欄の値（showMemoInput時のみ使用）
 
     // Promiseの解決関数を保持する変数
     let resolvePromise: (value: boolean) => void = () => { }
@@ -23,6 +26,7 @@ export const useDialogStore = defineStore('dialog', () =>
     {
         message.value = msg
         options.value = opts
+        memoInput.value = ''
         isOpen.value = true
 
         return new Promise<boolean>((resolve) =>
@@ -53,5 +57,5 @@ export const useDialogStore = defineStore('dialog', () =>
         return open(msg, { title, type })
     }
 
-    return { isOpen, message, options, open, close, resolve, alert, confirm }
+    return { isOpen, message, options, memoInput, open, close, resolve, alert, confirm }
 })

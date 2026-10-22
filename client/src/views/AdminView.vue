@@ -1711,10 +1711,17 @@ const onMouseUp = async () => {
   }
 
   // 通常のドラッグ操作（着信対応中ではない）の場合は、
-  // 「予約を登録する」か「業務外予定にする」かを選択させる
+  // 「予約を登録する」か「業務外予定にする」かを選択させる（業務外予定選択時はメモも同時入力可能）
   const registerAsReservation = await dialog.open(
-    '時間枠を確保しました。\nこの枠をどちらで使用しますか？\n（業務外予定の場合は、あとで【枠】をクリックするとメモに予定内容を入力できます）',
-    { title: '枠の利用方法を選択', type: 'normal', cancelText: '業務外予定にする', confirmText: '予約を登録する' }
+    '時間枠を確保しました。\nこの枠をどちらで使用しますか？\n（業務外予定の場合は、下の欄に予定内容を入力できます）',
+    {
+      title: '枠の利用方法を選択',
+      type: 'normal',
+      cancelText: '業務外予定にする',
+      confirmText: '予約を登録する',
+      showMemoInput: true,
+      memoPlaceholder: '例：会議、休憩、来客対応 など'
+    }
   )
   if (registerAsReservation && blockId) {
     const block = dayReservations.value.find(r => r.id === blockId)
@@ -1733,6 +1740,16 @@ const onMouseUp = async () => {
         customer_phone: '',
         note: BLOCK_NOTE
       })
+    }
+  } else if (!registerAsReservation && blockId) {
+    // 業務外予定にする場合、ダイアログで入力されたメモを時間枠の note として保存する
+    const memo = dialog.memoInput.trim()
+    if (memo) {
+      try {
+        await updateDoc(doc(db, 'reservations', blockId), { note: memo })
+      } catch (e) {
+        console.error('メモの保存に失敗しました:', e)
+      }
     }
   }
 }
