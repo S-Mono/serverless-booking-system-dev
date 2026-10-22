@@ -2749,7 +2749,10 @@ const exportReservationsToExcel = async () => {
 
         <!-- 顧客情報セクション -->
         <section class="modal-section customer-section">
-          <h4 class="section-title">顧客情報</h4>
+          <div class="section-title-row">
+            <h4 class="section-title">顧客情報</h4>
+            <button type="button" class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
+          </div>
           <div class="section-row customer-fields-row">
             <div class="form-group customer-field">
               <label>電話番号 <span style="color: #e74c3c;">*</span></label>
@@ -2796,9 +2799,6 @@ const exportReservationsToExcel = async () => {
                 </div>
               </div>
             </div>
-          </div>
-          <div class="section-row">
-            <button class="add-customer-btn" @click="openCustomerModal">➕ 顧客を新規登録</button>
           </div>
           <div class="form-group"><label>メモ</label><textarea v-model="newReservation.note"
               placeholder="特記事項..."></textarea>
@@ -3975,8 +3975,8 @@ const exportReservationsToExcel = async () => {
 }
 
 .modal-section {
-  margin-bottom: 1rem;
-  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 0.8rem;
+  padding: 0.7rem 1rem 0.8rem;
   background: #fafbfc;
   border: 1px solid #e3e7eb;
   border-radius: 8px;
@@ -3996,8 +3996,8 @@ const exportReservationsToExcel = async () => {
 }
 
 .modal-section .section-title {
-  margin: 0 0 0.7rem;
-  padding-bottom: 0.4rem;
+  margin: 0 0 0.5rem;
+  padding-bottom: 0.3rem;
   font-size: 0.95rem;
   font-weight: bold;
   color: #2c3e50;
@@ -4006,8 +4006,29 @@ const exportReservationsToExcel = async () => {
   padding-left: 0.5rem;
 }
 
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #e3e7eb;
+}
+
+.section-title-row .section-title {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.section-title-row .add-customer-btn {
+  flex-shrink: 0;
+  margin-top: 0;
+}
+
 .section-row {
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.4rem;
 }
 
 .section-row:last-child {
@@ -4028,7 +4049,7 @@ const exportReservationsToExcel = async () => {
 }
 
 .menu-table-wrapper {
-  max-height: 230px;
+  max-height: 150px;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -4172,10 +4193,10 @@ const exportReservationsToExcel = async () => {
 }
 
 .form-group {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 
 .form-row {
