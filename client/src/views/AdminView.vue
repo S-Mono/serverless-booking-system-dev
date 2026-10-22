@@ -3938,6 +3938,10 @@ const exportReservationsToExcel = async () => {
   margin-bottom: 1rem;
 }
 
+.reservation-modal .modal-header-row {
+  margin-bottom: 0.5rem;
+}
+
 .modal-header-row h3 {
   margin: 0;
   font-size: 1.1rem;
@@ -4034,7 +4038,7 @@ const exportReservationsToExcel = async () => {
 }
 
 .duration-summary {
-  padding: 0.5rem 0.8rem;
+  padding: 0.35rem 0.8rem;
   background: #eef6fc;
   border-radius: 4px;
   color: #2c3e50;
@@ -4237,6 +4241,10 @@ textarea {
   font-size: 0.95rem;
   resize: none;
   min-height: 80px;
+}
+
+.reservation-modal textarea {
+  min-height: 55px;
 }
 
 .modal-actions {
