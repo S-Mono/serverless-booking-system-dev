@@ -2329,7 +2329,7 @@ const exportReservationsToExcel = async () => {
                       :title="getTooltipText(res)" @mousedown.stop @click.stop="openReservationDetail(res)">
                       <span class="bar-text">
                         <span v-if="res.status === 'pending'">【未】</span>
-                        <span v-else-if="isBlockReservation(res)">【枠】</span>
+                        <span v-else-if="isBlockReservation(res) && !(res.note && res.note !== BLOCK_NOTE)">【枠】</span>
                         <template v-if="isBlockReservation(res)">
                           <template v-if="res.note && res.note !== BLOCK_NOTE">
                             <span class="bar-memo-text">📝 {{ res.note }}</span>
