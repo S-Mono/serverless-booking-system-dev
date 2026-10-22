@@ -2750,8 +2750,8 @@ const exportReservationsToExcel = async () => {
         <!-- 顧客情報セクション -->
         <section class="modal-section customer-section">
           <h4 class="section-title">顧客情報</h4>
-          <div class="section-row">
-            <div class="form-group inline-field">
+          <div class="section-row customer-fields-row">
+            <div class="form-group customer-field">
               <label>電話番号 <span style="color: #e74c3c;">*</span></label>
               <div class="suggest-wrapper">
                 <input type="tel" v-model="newReservation.customer_phone" @input="handlePhoneInput"
@@ -2767,9 +2767,7 @@ const exportReservationsToExcel = async () => {
               <span v-if="validationErrors.customer_phone" class="error-message">{{ validationErrors.customer_phone
               }}</span>
             </div>
-          </div>
-          <div class="section-row">
-            <div class="form-group inline-field">
+            <div class="form-group customer-field">
               <label>顧客名 <span style="color: #e74c3c;">*</span></label>
               <div class="suggest-wrapper">
                 <input type="text" v-model="newReservation.customer_name" @input="handleNameInput"
@@ -2784,9 +2782,7 @@ const exportReservationsToExcel = async () => {
               </div>
               <span v-if="validationErrors.customer_name" class="error-message">{{ validationErrors.customer_name }}</span>
             </div>
-          </div>
-          <div class="section-row">
-            <div class="form-group inline-field">
+            <div class="form-group customer-field">
               <label>カルテ番号</label>
               <div class="suggest-wrapper">
                 <input type="text" v-model="newReservation.record_number" @input="handleRecordNumberInput"
@@ -4089,30 +4085,49 @@ const exportReservationsToExcel = async () => {
   padding: 1rem;
 }
 
-/* 顧客情報セクション：ラベル左配置・1行表示・マージン縮小 */
-.form-group.inline-field {
-  flex-direction: row;
-  align-items: flex-start;
+/* 顧客情報セクション：電話番号・顧客名・カルテ番号を横並び1行に */
+.customer-fields-row {
+  display: flex;
   gap: 0.6rem;
-  margin-bottom: 0.3rem;
+  align-items: flex-start;
 }
 
-.form-group.inline-field>label {
-  flex: 0 0 auto;
-  width: 5.5em;
-  padding-top: 0.5rem;
-  white-space: nowrap;
-  font-size: 0.9rem;
-}
-
-.form-group.inline-field .suggest-wrapper {
+.customer-fields-row .customer-field {
   flex: 1;
   min-width: 0;
+  margin-bottom: 0;
 }
 
-.form-group.inline-field .error-message {
-  flex-basis: 100%;
-  margin-left: 5.5em;
+.customer-fields-row .customer-field label {
+  display: block;
+  margin-bottom: 0.2rem;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.customer-fields-row .customer-field .suggest-wrapper {
+  width: 100%;
+}
+
+.customer-fields-row .customer-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.customer-fields-row .customer-field .error-message {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 600px) {
+  .customer-fields-row {
+    flex-wrap: wrap;
+  }
+
+  .customer-fields-row .customer-field {
+    flex: 1 1 100%;
+    margin-bottom: 0.5rem;
+  }
 }
 
 @media (min-width: 769px) {
