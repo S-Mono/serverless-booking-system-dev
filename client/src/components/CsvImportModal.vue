@@ -191,7 +191,7 @@ interface ParsedCustomer {
   address_full: string
   company_name: string
   customer_type: string
-  preferred_category: 'barber' | 'beauty' | null
+  preferred_category: string | null
   email: string
   rank: string
   name_kanji: string
@@ -407,7 +407,7 @@ const processFile = async (file: File) => {
 
       // 🌟 よく使うサービスの自動判定
       // メモに「美容」または「婦人」が含まれる場合は 'beauty'、それ以外は null
-      let preferredCategory: 'barber' | 'beauty' | null = null
+      let preferredCategory: string | null = null
       if (/美容|婦人/.test(combinedMemo)) {
         preferredCategory = 'beauty'
       }

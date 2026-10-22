@@ -33,9 +33,11 @@ interface Menu {
 }
 interface Staff { id: string; name: string; display_name: string; roles: { accepts_new_customer: boolean; accepts_free_booking: boolean }; is_working: boolean; }
 interface CustomerProfile { id: string; name_kanji?: string; name_kana: string; phone_number?: string; is_existing_customer: boolean; preferred_category?: string; }
+interface MenuCategory { id: string; key: string; label: string; description?: string; order_priority: number }
 
 const menus = ref<Menu[]>([])
 const staffs = ref<Staff[]>([])
+const menuCategories = ref<MenuCategory[]>([])
 const shopConfig = ref<ShopConfigData>(getDefaultShopConfig())
 const loading = ref(true)
 const processing = ref(false)
@@ -52,7 +54,7 @@ const selectedTime = ref('')
 const selectedStaffId = ref<string>('')
 const customerNote = ref('')
 const availableSlots = ref<Date[]>([])
-const activeTab = ref<'barber' | 'beauty' | 'student' | 'chiro'>('barber')
+const activeTab = ref<string>('')
 
 const minDate = computed(() => {
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 10)
@@ -70,10 +72,13 @@ const availabilityMessage = computed(() => {
 
 const displayedMenus = computed(() => {
   return menus.value.filter(m => {
-    const cat = m.category || 'barber'
+    const cat = m.category || menuCategories.value[0]?.key || 'barber'
     return cat === activeTab.value
   })
 })
+
+// 現在のタブに対応するカテゴリ情報（見出し・説明文表示用）
+const activeCategory = computed(() => menuCategories.value.find(c => c.key === activeTab.value))
 
 // 前回の予約データ保持用
 const lastReservation = ref<any>(null)
@@ -135,8 +140,8 @@ const checkCustomerStatus = async (user: any) => {
         preferred_category: data.preferred_category
       }
       isNewUser.value = !data.is_existing_customer
-      if (data.preferred_category && ['barber', 'beauty', 'student', 'chiro'].includes(data.preferred_category)) {
-        activeTab.value = data.preferred_category as any
+      if (data.preferred_category) {
+        activeTab.value = data.preferred_category
       }
       return
     }
@@ -159,7 +164,7 @@ const checkCustomerStatus = async (user: any) => {
         preferred_category: data.preferred_category
       }
       isNewUser.value = !data.is_existing_customer
-      if (data.preferred_category) activeTab.value = data.preferred_category as any
+      if (data.preferred_category) activeTab.value = data.preferred_category
     } else {
       isNewUser.value = true
       customerProfile.value = null
@@ -222,6 +227,16 @@ onMounted(async () => {
 
         const staffSnap = await getDocs(collection(db, 'staffs'))
         staffs.value = staffSnap.docs.map(doc => { const d = doc.data(); return { id: doc.id, ...d, is_working: d.is_working ?? true } }) as Staff[]
+
+        const categorySnap = await getDocs(collection(db, 'menu_categories'))
+        menuCategories.value = categorySnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuCategory[]
+        // preferred_category 等で未設定の場合は先頭カテゴリを初期表示タブにする
+        if (!activeTab.value || !menuCategories.value.some(c => c.key === activeTab.value)) {
+          activeTab.value = menuCategories.value[0]?.key || ''
+        }
+
         const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
         if (configSnap.exists()) {
           shopConfig.value = normalizeShopConfig(configSnap.data())
@@ -413,27 +428,18 @@ const submitReservation = async () => {
           </div>
         </div>
         <div class="tab-container">
-          <button class="tab-btn" :class="{ active: activeTab === 'barber' }" @click="activeTab = 'barber'">💈
-            理容</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'beauty' }" @click="activeTab = 'beauty'">💇‍♀️
-            美容</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'student' }" @click="activeTab = 'student'">🎓
-            学生</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'chiro' }" @click="activeTab = 'chiro'">💆‍♂️
-            カイロ</button>
+          <button v-for="cat in menuCategories" :key="cat.id" class="tab-btn" :class="{ active: activeTab === cat.key }"
+            @click="activeTab = cat.key">{{ cat.label }}</button>
         </div>
       </div>
 
       <div class="menu-section-wrapper">
         <div class="menu-header">
           <h2 class="section-title">
-            {{ activeTab === 'barber' ? '理容メニュー' : (activeTab === 'beauty' ? '美容メニュー' : (activeTab === 'student' ?
-              '学生メニュー（中学生まで）' : 'カイロプラクティック')) }}
+            {{ activeCategory ? `${activeCategory.label}メニュー` : 'メニュー' }}
           </h2>
           <p class="section-desc">
-            {{ shopConfig.category_descriptions?.[activeTab] ||
-              (activeTab === 'chiro' ? '身体のメンテナンスメニューです' : (activeTab === 'student' ? '中学生までの学生向けメニューです' :
-                'ご希望のメニューを選択してください')) }}
+            {{ shopConfig.category_descriptions?.[activeTab] || activeCategory?.description || 'ご希望のメニューを選択してください' }}
           </p>
         </div>
         <ul class="menu-list">

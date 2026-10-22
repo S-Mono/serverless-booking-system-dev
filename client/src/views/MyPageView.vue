@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { auth } from '../lib/firebase'
-import { Timestamp } from 'firebase/firestore'
+import { auth, db } from '../lib/firebase'
+import { Timestamp, collection, getDocs } from 'firebase/firestore'
 import { onAuthStateChanged, signOut, type Unsubscribe, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
@@ -35,6 +35,8 @@ const phoneNumber = ref('') // 電話番号
 const preferredCategory = ref('barber')
 const isProfileOpen = ref(false) // お客様情報の開閉状態
 const isLineUser = ref(false) // LINEログインユーザーかどうか
+interface MenuCategoryItem { id: string; key: string; label: string }
+const menuCategories = ref<MenuCategoryItem[]>([])
 const showPasswordChangeDialog = ref(false) // パスワード変更ダイアログ表示フラグ
 const currentPassword = ref('') // 現在のパスワード
 const newPassword = ref('') // 新しいパスワード
@@ -101,18 +103,23 @@ const contactMessage = ref('')
 const loadUserData = async (userId: string) => {
   loading.value = true
   try {
-    // 予約と顧客データを並行で取得
-    const [reservationData, customerDataResult] = await Promise.all([
+    // 予約と顧客データ、カテゴリ一覧を並行で取得
+    const [reservationData, customerDataResult, categorySnap] = await Promise.all([
       fetchUserReservations(userId),
-      fetchCustomer(userId)
+      fetchCustomer(userId),
+      getDocs(collection(db, 'menu_categories'))
     ])
+
+    menuCategories.value = categorySnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuCategoryItem[]
 
     // 顧客データをローカル状態に反映
     if (customerDataResult) {
       nameKanji.value = customerDataResult.name_kanji || ''
       nameKana.value = customerDataResult.name_kana || ''
       phoneNumber.value = customerDataResult.phone_number ? formatPhoneNumber(customerDataResult.phone_number) : ''
-      preferredCategory.value = customerDataResult.preferred_category || 'barber'
+      preferredCategory.value = customerDataResult.preferred_category || menuCategories.value[0]?.key || 'barber'
       isLineUser.value = customerDataResult.provider === 'line'
       // 未入力なら開く、入力済みなら閉じる
       isProfileOpen.value = !nameKana.value || !phoneNumber.value
@@ -425,17 +432,8 @@ const changePassword = async () => {
               <div class="form-group">
                 <label>よく利用するメニュー</label>
                 <div class="radio-group">
-                  <label class="radio-item">
-                    <input type="radio" value="barber" v-model="preferredCategory"> 💈 理容
-                  </label>
-                  <label class="radio-item">
-                    <input type="radio" value="beauty" v-model="preferredCategory"> 💇‍♀️ 美容
-                  </label>
-                  <label class="radio-item">
-                    <input type="radio" value="student" v-model="preferredCategory"> 🎓 学生（中学まで）
-                  </label>
-                  <label class="radio-item">
-                    <input type="radio" value="chiro" v-model="preferredCategory"> 💆‍♂️ カイロ
+                  <label class="radio-item" v-for="cat in menuCategories" :key="cat.id">
+                    <input type="radio" :value="cat.key" v-model="preferredCategory"> {{ cat.label }}
                   </label>
                 </div>
                 <p class="hint">※ 予約画面の初期表示に反映されます。</p>

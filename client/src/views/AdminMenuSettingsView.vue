@@ -9,7 +9,7 @@ const dialog = useDialogStore()
 const router = useRouter()
 const userStore = useUserStore()
 
-const { menus, staffs, menuTags, isLoading: loading, isOperating, taxRate, menusByCategory, fetchData, calcTaxIncluded, calcTaxExcluded, saveMenu, deleteMenu, deleteCategoryMenus, importFromCsv, getStaffName, getTagName, saveTag, deleteTag } = useMenu({
+const { menus, staffs, menuTags, menuCategories, isLoading: loading, isOperating, taxRate, menusByCategory, fetchData, calcTaxIncluded, calcTaxExcluded, saveMenu, deleteMenu, deleteCategoryMenus, importFromCsv, getStaffName, getTagName, saveTag, deleteTag, saveCategory, deleteCategory } = useMenu({
   onError: (error) => dialog.alert(error.message || '読み込みエラー', 'エラー')
 })
 
@@ -19,10 +19,12 @@ const editTargetId = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const editForm = ref({
-  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], tags: [] as string[], description: '', category: 'barber' as 'barber' | 'beauty' | 'student' | 'chiro', order_priority: 10
+  id: '', title: '', price: 0, priceWithTax: 0, duration_min: 30, available_staff_ids: [] as string[], tags: [] as string[], description: '', category: '', order_priority: 10
 })
 
-const categories: { id: 'barber' | 'beauty' | 'student' | 'chiro'; label: string }[] = [{ id: 'barber', label: '💈 理容' }, { id: 'beauty', label: '💇‍♀️ 美容' }, { id: 'student', label: '🎓 学生（中学まで）' }, { id: 'chiro', label: '💆‍♂️ カイロ' }]
+// カテゴリ（menu_categories から取得。{id, label} 形式に変換して既存テンプレートと互換性を保つ）
+const categories = computed(() => menuCategories.value.map(c => ({ id: c.key, label: c.label })))
+
 
 // --- 一覧の表示モード・フィルタ ---
 const viewMode = ref<'category' | 'staff'>('staff')
@@ -43,13 +45,15 @@ const filteredMenus = computed(() => {
   })
 })
 
-// カテゴリ別セクション（フィルタ適用済み）
-const filteredByCategory = computed(() => ({
-  barber: filteredMenus.value.filter(m => m.category === 'barber' || !m.category),
-  beauty: filteredMenus.value.filter(m => m.category === 'beauty'),
-  student: filteredMenus.value.filter(m => m.category === 'student'),
-  chiro: filteredMenus.value.filter(m => m.category === 'chiro')
-}))
+// カテゴリ別セクション（フィルタ適用済み。menu_categories の key ごとに動的生成）
+const filteredByCategory = computed(() => {
+  const result: Record<string, typeof menus.value> = {}
+  for (const cat of categories.value) {
+    result[cat.id] = filteredMenus.value.filter(m => (m.category || categories.value[0]?.id) === cat.id)
+  }
+  return result
+})
+
 
 // 担当者別セクション（複数担当のメニューは各セクションに重複表示）
 interface StaffSection { id: string; label: string; menus: typeof menus.value }
@@ -139,6 +143,56 @@ const deleteCategoryMenusHandler = async (catId: string, catLabel: string) => {
     dialog.alert('削除対象のメニューがありません')
   }
 }// 📤 CSVインポート処理
+
+// --- カテゴリ管理 ---
+const showCategoryModal = ref(false)
+const newCategoryKey = ref('')
+const newCategoryLabel = ref('')
+const renamingCategoryId = ref<string | null>(null)
+const renameCategoryLabel = ref('')
+
+const addCategoryHandler = async () => {
+  const key = newCategoryKey.value.trim()
+  const label = newCategoryLabel.value.trim()
+  if (!key || !label) return dialog.alert('カテゴリID・表示名を入力してください')
+  const success = await saveCategory({ key, label })
+  if (success) {
+    newCategoryKey.value = ''
+    newCategoryLabel.value = ''
+  } else {
+    dialog.alert('カテゴリの追加に失敗しました（同じIDのカテゴリが既に存在する可能性があります）', 'エラー')
+  }
+}
+
+const startRenameCategory = (categoryId: string, currentLabel: string) => {
+  renamingCategoryId.value = categoryId
+  renameCategoryLabel.value = currentLabel
+}
+
+const saveRenameCategoryHandler = async () => {
+  if (!renamingCategoryId.value) return
+  const target = menuCategories.value.find(c => c.id === renamingCategoryId.value)
+  if (!target) return
+  const label = renameCategoryLabel.value.trim()
+  if (!label) { renamingCategoryId.value = null; return }
+  const success = await saveCategory({ id: target.id, key: target.key, label })
+  if (!success) dialog.alert('カテゴリ名の変更に失敗しました', 'エラー')
+  renamingCategoryId.value = null
+  renameCategoryLabel.value = ''
+}
+
+const deleteCategoryHandler = async (categoryId: string, categoryLabel: string) => {
+  const target = menuCategories.value.find(c => c.id === categoryId)
+  const usedCount = target ? menus.value.filter(m => (m.category || '') === target.key).length : 0
+  if (usedCount > 0) {
+    return dialog.alert(`カテゴリ「${categoryLabel}」は${usedCount}件のメニューで使用中のため削除できません。先にメニューのカテゴリを変更するか削除してください。`, 'エラー')
+  }
+  const ok = await dialog.confirm(`カテゴリ「${categoryLabel}」を削除しますか？`, 'カテゴリ削除の確認', 'danger')
+  if (!ok) return
+  const success = await deleteCategory(categoryId)
+  if (!success) dialog.alert('カテゴリの削除に失敗しました', 'エラー')
+}
+
 const triggerFileUpload = () => fileInput.value?.click()
 
 const importCsv = async (event: Event) => {
@@ -169,19 +223,20 @@ const openEditModal = (menu?: any) => {
     isEditing.value = true
     editTargetId.value = menu.id
     editForm.value = { ...JSON.parse(JSON.stringify(menu)), priceWithTax: menu.price_with_tax }
-    if (!editForm.value.category) editForm.value.category = 'barber'
+    if (!editForm.value.category) editForm.value.category = categories.value[0]?.id ?? ''
     if (editForm.value.order_priority === undefined) editForm.value.order_priority = 10
     if (!editForm.value.tags) editForm.value.tags = []
   } else {
     isEditing.value = false
     editTargetId.value = null
-    editForm.value = { id: '', title: '', price: 4000, priceWithTax: calcTaxIncluded(4000), duration_min: 60, available_staff_ids: staffs.value.map(s => s.id), tags: [], description: '', category: 'barber', order_priority: 10 }
+    editForm.value = { id: '', title: '', price: 4000, priceWithTax: calcTaxIncluded(4000), duration_min: 60, available_staff_ids: staffs.value.map(s => s.id), tags: [], description: '', category: categories.value[0]?.id ?? '', order_priority: 10 }
   }
   showModal.value = true
 }
 
 const saveMenuHandler = async () => {
   if (!editForm.value.title) return dialog.alert('メニュー名を入力してください')
+  if (!editForm.value.category) return dialog.alert('カテゴリを選択してください（カテゴリが未登録の場合は「📂 カテゴリ管理」から追加してください）')
 
   const success = await saveMenu({
     id: editTargetId.value || undefined,
@@ -231,6 +286,7 @@ onMounted(() => { fetchData() })
         <div class="top-actions">
           <span class="tax-info">消費税率: <strong>{{ taxRate }}%</strong></span>
           <input type="file" ref="fileInput" accept=".csv" style="display: none" @change="importCsv" />
+          <button @click="showCategoryModal = true" class="tag-btn">📂 カテゴリ管理</button>
           <button @click="showTagModal = true" class="tag-btn">🏷️ タグ管理</button>
           <button @click="triggerFileUpload" class="csv-btn">📤 CSVインポート</button>
           <button @click="openEditModal()" class="add-btn">＋ 新規メニュー追加</button>
@@ -251,6 +307,11 @@ onMounted(() => { fetchData() })
 
         <div v-if="loading">Loading...</div>
 
+        <!-- カテゴリが未登録の場合の案内 -->
+        <div v-else-if="categories.length === 0" class="no-item">
+          カテゴリが登録されていません。「📂 カテゴリ管理」から追加してください。
+        </div>
+
         <!-- カテゴリ別表示 -->
         <div v-else-if="viewMode === 'category'" class="category-sections">
           <div v-for="cat in categories" :key="cat.id" class="category-section">
@@ -261,10 +322,10 @@ onMounted(() => { fetchData() })
                 全削除</button>
             </div>
 
-            <div v-if="filteredByCategory[cat.id as keyof typeof filteredByCategory].length === 0" class="no-item">メニューがありません
+            <div v-if="(filteredByCategory[cat.id] ?? []).length === 0" class="no-item">メニューがありません
             </div>
             <div class="menu-list">
-              <div v-for="menu in filteredByCategory[cat.id as keyof typeof filteredByCategory]" :key="menu.id"
+              <div v-for="menu in (filteredByCategory[cat.id] ?? [])" :key="menu.id"
                 class="menu-card">
                 <div class="card-header">
                   <div class="title-group"><span class="order-badge">{{ menu.order_priority }}</span>
@@ -314,7 +375,7 @@ onMounted(() => { fetchData() })
                         class="tax-text">(税込 ¥{{ menu.price_with_tax.toLocaleString() }})</small></span></div>
                   <div class="detail-row"><span class="label">時間:</span> {{ menu.duration_min }}分</div>
                   <div class="detail-row"><span class="label">区分:</span>
-                    <span class="menu-tag-badge category-badge">{{ categories.find(c => c.id === (menu.category || 'barber'))?.label }}</span>
+                    <span class="menu-tag-badge category-badge">{{ categories.find(c => c.id === menu.category)?.label || menu.category || '未分類' }}</span>
                   </div>
                   <div v-if="(menu.tags ?? []).length > 0" class="detail-row"><span class="label">タグ:</span>
                     <div class="staff-tags"><span v-for="tagId in menu.tags" :key="tagId"
@@ -332,7 +393,8 @@ onMounted(() => { fetchData() })
       <div class="modal-content">
         <h3>{{ isEditing ? 'メニュー編集' : '新規メニュー' }}</h3>
         <div class="form-group"><label>カテゴリ</label>
-          <div class="segmented-control">
+          <div v-if="categories.length === 0" class="no-tags-msg">カテゴリが未登録です。「📂 カテゴリ管理」から追加してください。</div>
+          <div v-else class="segmented-control">
             <button v-for="cat in categories" :key="cat.id" type="button"
               class="segment-btn" :class="{ active: editForm.category === cat.id }"
               @click="editForm.category = cat.id">{{ cat.label }}</button>
@@ -397,6 +459,40 @@ onMounted(() => { fetchData() })
               <span class="tag-usage">{{ menus.filter(m => (m.tags ?? []).includes(tag.id)).length }}件のメニュー</span>
               <button @click="startRename(tag.id, tag.name)" class="tag-action-btn" title="名前を変更">✏️</button>
               <button @click="deleteTagHandler(tag.id, tag.name)" class="tag-action-btn" title="削除">🗑️</button>
+            </template>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- カテゴリ管理モーダル -->
+    <div v-if="showCategoryModal" class="modal-overlay" @click.self="showCategoryModal = false">
+      <div class="modal-content">
+        <div class="modal-header-row">
+          <h3>📂 カテゴリ管理</h3>
+          <button class="close-x-btn" @click="showCategoryModal = false">×</button>
+        </div>
+        <div class="tag-add-row">
+          <input type="text" v-model="newCategoryKey" placeholder="カテゴリID（例: datsumo）" style="max-width: 140px;" />
+          <input type="text" v-model="newCategoryLabel" placeholder="表示名（例: 脱毛）"
+            @keyup.enter="addCategoryHandler" />
+          <button @click="addCategoryHandler" class="save-btn" :disabled="isOperating">追加</button>
+        </div>
+        <p class="hint" style="margin-top: 0.3rem;">※ カテゴリIDは登録後の変更ができません。半角英数字を推奨します（例: datsumo, facial）</p>
+        <div v-if="menuCategories.length === 0" class="no-item">カテゴリが登録されていません</div>
+        <ul v-else class="tag-manage-list">
+          <li v-for="cat in menuCategories" :key="cat.id" class="tag-manage-item">
+            <template v-if="renamingCategoryId === cat.id">
+              <input type="text" v-model="renameCategoryLabel" class="tag-rename-input"
+                @keyup.enter="saveRenameCategoryHandler" @keyup.esc="renamingCategoryId = null" />
+              <button @click="saveRenameCategoryHandler" class="tag-action-btn" :disabled="isOperating">✔</button>
+              <button @click="renamingCategoryId = null" class="tag-action-btn">✖</button>
+            </template>
+            <template v-else>
+              <span class="tag-name">{{ cat.label }} <small class="hint-inline">({{ cat.key }})</small></span>
+              <span class="tag-usage">{{ menus.filter(m => (m.category || '') === cat.key).length }}件のメニュー</span>
+              <button @click="startRenameCategory(cat.id, cat.label)" class="tag-action-btn" title="表示名を変更">✏️</button>
+              <button @click="deleteCategoryHandler(cat.id, cat.label)" class="tag-action-btn" title="削除">🗑️</button>
             </template>
           </li>
         </ul>

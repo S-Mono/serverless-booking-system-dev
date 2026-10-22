@@ -36,13 +36,14 @@ interface Reservation {
 interface Menu {
   id: string; title: string; duration_min: number; price: number
   price_with_tax?: number
-  category?: 'barber' | 'beauty' | 'student' | 'chiro'
+  category?: string
   available_staff_ids?: string[]
   tags?: string[]
   description?: string
   order_priority?: number
 }
 interface MenuTag { id: string; name: string; order_priority?: number }
+interface MenuCategoryItem { id: string; key: string; label: string; description?: string; order_priority?: number }
 
 const staffs = ref<Staff[]>([])
 // reservations for the left-side list (from selectedDate onward)
@@ -317,12 +318,7 @@ const menuCategoryFilter = ref('')
 const menuTagFilter = ref('')
 const menuStaffFilterEnabled = ref(true)
 
-const menuCategories = [
-  { id: 'barber', label: '理容' },
-  { id: 'beauty', label: '美容' },
-  { id: 'student', label: '学生（中学まで）' },
-  { id: 'chiro', label: 'カイロ' }
-] as const
+const menuCategories = ref<MenuCategoryItem[]>([])
 
 const getTagName = (tagId: string): string => {
   return menuTags.value.find(t => t.id === tagId)?.name || ''
@@ -339,7 +335,7 @@ const filteredMenus = computed(() => {
       if (!haystack.includes(keyword)) return false
     }
     // カテゴリ
-    if (menuCategoryFilter.value && (m.category || 'barber') !== menuCategoryFilter.value) return false
+    if (menuCategoryFilter.value && (m.category || menuCategories.value[0]?.key || 'barber') !== menuCategoryFilter.value) return false
     // タグ
     if (menuTagFilter.value && !(m.tags ?? []).includes(menuTagFilter.value)) return false
     // 担当者フィルタ（担当未設定のメニューは無条件で表示）
@@ -353,10 +349,10 @@ const filteredMenus = computed(() => {
 
 // カテゴリごとにグルーピング（プルダウンの optgroup 用）
 const groupedFilteredMenus = computed(() => {
-  return menuCategories
+  return menuCategories.value
     .map(cat => ({
       ...cat,
-      menus: filteredMenus.value.filter(m => (m.category || 'barber') === cat.id)
+      menus: filteredMenus.value.filter(m => (m.category || menuCategories.value[0]?.key || 'barber') === cat.key)
     }))
     .filter(g => g.menus.length > 0)
 })
@@ -556,6 +552,10 @@ const initData = async (fetchMaster = true) => {
       menuTags.value = tagSnap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuTag[]
+      const categorySnap = await getDocs(collection(db, 'menu_categories'))
+      menuCategories.value = categorySnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuCategoryItem[]
       const configSnap = await getDoc(doc(db, 'shop_config', 'default_config'))
       if (configSnap.exists()) {
         shopConfig.value = normalizeShopConfig(configSnap.data())
@@ -2476,7 +2476,7 @@ const exportReservationsToExcel = async () => {
             <div class="menu-filter-row">
               <select v-model="menuCategoryFilter" class="menu-filter-select">
                 <option value="">カテゴリ: 全て</option>
-                <option v-for="cat in menuCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+                <option v-for="cat in menuCategories" :key="cat.id" :value="cat.key">{{ cat.label }}</option>
               </select>
               <select v-model="menuTagFilter" class="menu-filter-select">
                 <option value="">タグ: 全て</option>

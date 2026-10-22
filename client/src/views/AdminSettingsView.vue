@@ -44,19 +44,15 @@ const weekdays = ['日', '月', '火', '水', '木', '金', '土']
 const tempClosedDate = ref('')
 const weeklyClosedDays = computed(() => deriveHolidayWeekdays(config.value.weekday_business_hours))
 
-// カテゴリ説明文の編集対象（固定カテゴリ）
-const editableCategories = [
-  { id: 'barber', label: '💈 理容' },
-  { id: 'beauty', label: '💇‍♀️ 美容' },
-  { id: 'student', label: '🎓 学生' },
-  { id: 'chiro', label: '💆‍♂️ カイロ' }
-] as const
+// カテゴリ説明文の編集対象（Firestore `menu_categories` から動的取得）
+interface MenuCategoryItem { id: string; key: string; label: string; description?: string; order_priority?: number }
+const editableCategories = ref<MenuCategoryItem[]>([])
 
 /** カテゴリ説明文の取得・更新用（v-model から参照） */
-const getCategoryDescription = (id: string) => config.value.category_descriptions?.[id] ?? ''
-const setCategoryDescription = (id: string, value: string) => {
+const getCategoryDescription = (key: string) => config.value.category_descriptions?.[key] ?? ''
+const setCategoryDescription = (key: string, value: string) => {
   if (!config.value.category_descriptions) config.value.category_descriptions = {}
-  config.value.category_descriptions[id] = value
+  config.value.category_descriptions[key] = value
 }
 
 // --- データ取得 ---
@@ -74,6 +70,11 @@ const fetchData = async () => {
     if (configSnap.exists()) {
       config.value = normalizeShopConfig(configSnap.data())
     }
+
+    const categorySnap = await getDocs(collection(db, 'menu_categories'))
+    editableCategories.value = categorySnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuCategoryItem[]
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
@@ -207,8 +208,8 @@ onMounted(() => { fetchData() })
             <div class="category-desc-list">
               <div v-for="cat in editableCategories" :key="cat.id" class="input-group">
                 <label>{{ cat.label }}</label>
-                <input type="text" :value="getCategoryDescription(cat.id)"
-                  @input="setCategoryDescription(cat.id, ($event.target as HTMLInputElement).value)"
+                <input type="text" :value="getCategoryDescription(cat.key)"
+                  @input="setCategoryDescription(cat.key, ($event.target as HTMLInputElement).value)"
                   placeholder="例：ご希望のメニューを選択してください" />
               </div>
             </div>

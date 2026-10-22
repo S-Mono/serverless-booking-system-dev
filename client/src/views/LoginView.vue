@@ -13,7 +13,7 @@ import {
   browserLocalPersistence,
   type User
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, Timestamp } from 'firebase/firestore'
 import liff from '@line/liff'
 import { useLineAuthStore } from '../stores/lineAuth'
 
@@ -69,13 +69,23 @@ const createCustomerData = async (user: User, provider: 'google' | 'line' | 'pho
       const phoneNumberValue = provider === 'phone' ? user.email?.split('@')[0] || '' : ''
       console.log('[createCustomerData] Creating new customer with phone_number:', phoneNumberValue)
 
+      // デフォルトのカテゴリキーを動的に取得（先頭カテゴリ、取得失敗時は 'barber' にフォールバック）
+      let defaultCategoryKey = 'barber'
+      try {
+        const categorySnap = await getDocs(collection(db, 'menu_categories'))
+        const cats = categorySnap.docs
+          .map(d => d.data())
+          .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999))
+        if (cats[0]?.key) defaultCategoryKey = cats[0].key
+      } catch (e) { console.error('カテゴリ取得エラー:', e) }
+
       await setDoc(docRef, {
         name_kanji: nameKanji || '',
         name_kana: name || user.displayName || '',
         phone_number: phoneNumberValue,
         email: user.email || '',
         is_existing_customer: false,
-        preferred_category: 'barber',
+        preferred_category: defaultCategoryKey,
         provider: provider,
         ...(lineUserId ? { line_user_id: lineUserId } : {}),
         created_at: Timestamp.now(),

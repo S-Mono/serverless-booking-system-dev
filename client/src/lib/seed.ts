@@ -1,8 +1,8 @@
 import { db } from './firebase'
-import { doc, setDoc, collection, getDocs, writeBatch } from 'firebase/firestore'
+import { doc, setDoc, addDoc, collection, getDocs, writeBatch } from 'firebase/firestore'
 import { useDialogStore } from '../stores/dialog'
 import { normalizeShopConfig } from './businessHours'
-import { seedShopConfig, seedStaffs, seedMenus } from './seedMasterData'
+import { seedShopConfig, seedStaffs, seedMenus, seedMenuCategories } from './seedMasterData'
 
 // コレクションの中身を全て削除するヘルパー関数
 const clearCollection = async (collectionName: string) => {
@@ -38,7 +38,8 @@ export const seedDatabase = async () => {
       clearCollection('reservations'), // 予約
       clearCollection('customers'),    // 顧客
       clearCollection('menus'),        // メニュー
-      clearCollection('staffs')        // スタッフ
+      clearCollection('staffs'),       // スタッフ
+      clearCollection('menu_categories') // メニューカテゴリ
     ])
 
     // 2. 店舗設定
@@ -58,6 +59,11 @@ export const seedDatabase = async () => {
     // 4. メニューマスタ (CSV相当の内容)
     for (const menu of seedMenus) {
       await setDoc(doc(db, 'menus', menu.id), menu)
+    }
+
+    // 4.5. メニューカテゴリマスタ
+    for (const category of seedMenuCategories) {
+      await addDoc(collection(db, 'menu_categories'), category)
     }
 
     // 5. 顧客データ (テスト用)

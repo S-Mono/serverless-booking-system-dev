@@ -28,7 +28,7 @@ interface Customer {
     email?: string
     rank?: string
     memo?: string
-    preferred_category?: 'barber' | 'beauty' | 'student' | 'chiro' | null
+    preferred_category?: string | null
     // true => 既存顧客, false => 新規顧客
     is_existing_customer?: boolean
     created_at?: Timestamp
@@ -50,8 +50,13 @@ const searchQuery = ref('')
 
 const showModal = ref(false)
 const isEditing = ref(false)
-const editForm = ref<Customer>({ id: '', name_kana: '', phone_number: '', record_number: '', memo: '', preferred_category: 'barber', is_existing_customer: true })
+const editForm = ref<Customer>({ id: '', name_kana: '', phone_number: '', record_number: '', memo: '', preferred_category: null, is_existing_customer: true })
 const history = ref<ReservationHistory[]>([])
+
+interface MenuCategoryItem { id: string; key: string; label: string }
+const menuCategories = ref<MenuCategoryItem[]>([])
+const getCategoryLabel = (key?: string | null) => menuCategories.value.find(c => c.key === key)?.label || ''
+
 
 // パスワード変更
 const showPasswordModal = ref(false)
@@ -121,11 +126,18 @@ const handleImported = async () => {
 const fetchCustomers = async () => {
     loading.value = true
     try {
-        const snap = await getDocs(collection(db, 'customers'))
+        const [snap, categorySnap] = await Promise.all([
+            getDocs(collection(db, 'customers')),
+            getDocs(collection(db, 'menu_categories'))
+        ])
         customers.value = snap.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
             .filter((c: any) => !c.deleted_at)
             .sort((a: any, b: any) => (a.name_kana || '').localeCompare(b.name_kana || '')) as Customer[]
+
+        menuCategories.value = categorySnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a: any, b: any) => (a.order_priority ?? 999) - (b.order_priority ?? 999)) as MenuCategoryItem[]
 
         filterCustomers()
 
@@ -427,10 +439,7 @@ onMounted(() => { fetchCustomers() })
                                 </td>
                                 <td>{{ cust.is_existing_customer ? '既存' : '新規' }}</td>
                                 <td>
-                                    <span v-if="cust.preferred_category === 'beauty'">美容</span>
-                                    <span v-else-if="cust.preferred_category === 'barber'">理容</span>
-                                    <span v-else-if="cust.preferred_category === 'student'">学生</span>
-                                    <span v-else-if="cust.preferred_category === 'chiro'">カイロ</span>
+                                    <span v-if="getCategoryLabel(cust.preferred_category)">{{ getCategoryLabel(cust.preferred_category) }}</span>
                                     <span v-else style="color: #bbb;">未設定</span>
                                 </td>
                                 <td class="memo-cell">{{ cust.memo }}</td>
@@ -528,10 +537,9 @@ onMounted(() => { fetchCustomers() })
                             <label>よく利用するメニュー</label>
                             <div class="radio-group">
                                 <label><input type="radio" :value="null" v-model="editForm.preferred_category"> 未設定</label>
-                                <label><input type="radio" value="barber" v-model="editForm.preferred_category"> 理容</label>
-                                <label><input type="radio" value="beauty" v-model="editForm.preferred_category"> 美容</label>
-                                <label><input type="radio" value="student" v-model="editForm.preferred_category"> 学生（中学まで）</label>
-                                <label><input type="radio" value="chiro" v-model="editForm.preferred_category"> カイロ</label>
+                                <label v-for="cat in menuCategories" :key="cat.id">
+                                    <input type="radio" :value="cat.key" v-model="editForm.preferred_category"> {{ cat.label }}
+                                </label>
                             </div>
                         </div>
 

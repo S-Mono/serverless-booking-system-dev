@@ -76,6 +76,14 @@ export const seedStaffs = [
   }
 ] as const
 
+export const seedMenuCategories = [
+  { key: 'barber', label: '💈 理容', description: '', order_priority: 1 },
+  { key: 'beauty', label: '💇‍♀️ 美容', description: '', order_priority: 2 },
+  { key: 'student', label: '🎓 学生（中学まで）', description: '', order_priority: 3 },
+  { key: 'chiro', label: '💆‍♂️ カイロ', description: '', order_priority: 4 }
+] as const
+
+
 export const seedMenus = [
   {
     "id": "menu_10",
