@@ -192,10 +192,28 @@ const newReservation = ref({
 // --- 業務外予定（時間枠確保）専用の編集モーダル ---
 const showBlockEditModal = ref(false)
 const blockEditForm = ref({
-  id: '', staff_id: '', start_time: '', end_time: '', note: ''
+  id: '', staff_id: '', start_time: '', end_time: '', note: '', isAllDay: false
 })
 const closeBlockEditModal = () => {
   showBlockEditModal.value = false
+}
+
+// 「終日」チェック時、対象日の営業時間（openHour〜closeHour）を開始/終了に反映する
+const applyAllDayToBlockForm = (baseDate: Date) => {
+  const start = new Date(baseDate)
+  start.setHours(openHour.value, 0, 0, 0)
+  const end = new Date(baseDate)
+  end.setHours(closeHour.value, 0, 0, 0)
+  blockEditForm.value.start_time = toLocalISOString(start)
+  blockEditForm.value.end_time = toLocalISOString(end)
+}
+
+// 終日チェックボックスの切り替え
+const onToggleBlockAllDay = () => {
+  if (blockEditForm.value.isAllDay) {
+    const baseDate = blockEditForm.value.start_time ? new Date(blockEditForm.value.start_time) : selectedDate.value
+    applyAllDayToBlockForm(baseDate)
+  }
 }
 
 // 時間枠確保（顧客情報なしの空枠）の定数
@@ -1625,15 +1643,23 @@ const openEditModal = async (res: Reservation) => {
 // --- 業務外予定（時間枠確保）専用の編集処理 ---
 // 通常予約フォームと異なり、メニューや顧客情報の入力を必須としない
 const openBlockEditModal = (res: Reservation) => {
+  const startDate = res.start_at.toDate()
+  const endDate = res.end_at.toDate()
+  // 既存の時間帯が、その日の営業時間（openHour〜closeHour）と一致するかで「終日」判定
+  const isAllDay = startDate.getHours() === openHour.value && startDate.getMinutes() === 0 &&
+    endDate.getHours() === closeHour.value && endDate.getMinutes() === 0
+
   blockEditForm.value = {
     id: res.id,
     staff_id: res.staff_id,
-    start_time: toLocalISOString(res.start_at.toDate()),
-    end_time: toLocalISOString(res.end_at.toDate()),
-    note: (res.note && res.note !== BLOCK_NOTE) ? res.note : ''
+    start_time: toLocalISOString(startDate),
+    end_time: toLocalISOString(endDate),
+    note: (res.note && res.note !== BLOCK_NOTE) ? res.note : '',
+    isAllDay
   }
   showBlockEditModal.value = true
 }
+
 
 const submitBlockEdit = async () => {
   const form = blockEditForm.value
@@ -1646,6 +1672,11 @@ const submitBlockEdit = async () => {
   if (!form.start_time || !form.end_time) {
     dialog.alert('開始・終了日時を入力してください')
     return
+  }
+
+  // 終日チェック時は、念のため保存直前にも営業時間へ再計算しておく（日付のズレ防止）
+  if (form.isAllDay) {
+    applyAllDayToBlockForm(new Date(form.start_time))
   }
 
   const startDate = new Date(form.start_time)
@@ -2688,12 +2719,18 @@ const exportReservationsToExcel = async () => {
           </select>
         </div>
         <div class="form-group">
+          <label class="all-day-toggle">
+            <input type="checkbox" v-model="blockEditForm.isAllDay" @change="onToggleBlockAllDay">
+            終日（営業時間 {{ openHour }}:00〜{{ closeHour }}:00 を確保）
+          </label>
+        </div>
+        <div class="form-group">
           <label>開始日時 <span style="color: #e74c3c;">*</span></label>
-          <input type="datetime-local" v-model="blockEditForm.start_time">
+          <input type="datetime-local" v-model="blockEditForm.start_time" :disabled="blockEditForm.isAllDay">
         </div>
         <div class="form-group">
           <label>終了日時 <span style="color: #e74c3c;">*</span></label>
-          <input type="datetime-local" v-model="blockEditForm.end_time">
+          <input type="datetime-local" v-model="blockEditForm.end_time" :disabled="blockEditForm.isAllDay">
         </div>
         <div class="form-group">
           <label>メモ（予定内容）</label>
@@ -3883,6 +3920,18 @@ textarea {
   font-weight: bold;
   cursor: pointer;
   margin-right: auto;
+}
+
+.all-day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.all-day-toggle input[type="checkbox"] {
+  width: auto;
 }
 
 .cancel-btn {
