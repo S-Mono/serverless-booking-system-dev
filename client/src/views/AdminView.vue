@@ -1669,12 +1669,54 @@ const onMouseUp = async () => {
     return
   }
 
-  // 2. 入力フォームを表示するか確認（キャンセルなら枠確保のまま終了）
-  const openForm = await dialog.confirm(
-    '時間枠を確保しました。\n続けて予約情報の入力フォームを表示しますか？\n（キャンセルした場合は枠確保のみで、あとから編集できます）',
-    '予約情報の入力'
+  // 2. 入力フォームを表示するか確認
+  if (pendingCallInfo.value) {
+    // 着信対応中（枠選択モード）は、従来どおりのダイアログ・分岐を維持する（破壊しない）
+    const openForm = await dialog.confirm(
+      '時間枠を確保しました。\n続けて予約情報の入力フォームを表示しますか？\n（キャンセルした場合は枠確保のみで、あとから編集できます）',
+      '予約情報の入力'
+    )
+    if (openForm && blockId) {
+      const block = dayReservations.value.find(r => r.id === blockId)
+      if (block) {
+        await openEditModal(block)
+      } else {
+        // リアルタイム反映前でも開けるようフォールバック
+        await openEditModal({
+          id: blockId,
+          staff_id: staffId,
+          start_at: Timestamp.fromDate(startTime),
+          end_at: Timestamp.fromDate(endTime),
+          menu_items: [],
+          status: 'confirmed',
+          customer_name: '',
+          customer_phone: '',
+          note: BLOCK_NOTE
+        })
+      }
+      // 着信対応中であれば、確保した枠に着信の顧客情報をプリセットする
+      newReservation.value.customer_phone = formatPhoneNumber(pendingCallInfo.value.phone)
+      newReservation.value.customer_id = pendingCallInfo.value.customerId
+      newReservation.value.customer_name = pendingCallInfo.value.customerName
+      newReservation.value.record_number = pendingCallInfo.value.recordNumber
+      if (!newReservation.value.note) {
+        newReservation.value.note = '【電話受付】'
+      }
+      pendingCallInfo.value = null
+    } else if (!openForm) {
+      // 着信対応の枠選択モード中にキャンセルした場合は、オーバーレイ/吹き出しを解除する
+      pendingCallInfo.value = null
+    }
+    return
+  }
+
+  // 通常のドラッグ操作（着信対応中ではない）の場合は、
+  // 「予約を登録する」か「業務外予定にする」かを選択させる
+  const registerAsReservation = await dialog.open(
+    '時間枠を確保しました。\nこの枠をどちらで使用しますか？\n（業務外予定の場合は、あとで【枠】をクリックするとメモに予定内容を入力できます）',
+    { title: '枠の利用方法を選択', type: 'normal', cancelText: '業務外予定にする', confirmText: '予約を登録する' }
   )
-  if (openForm && blockId) {
+  if (registerAsReservation && blockId) {
     const block = dayReservations.value.find(r => r.id === blockId)
     if (block) {
       await openEditModal(block)
@@ -1692,22 +1734,9 @@ const onMouseUp = async () => {
         note: BLOCK_NOTE
       })
     }
-    // 着信対応中であれば、確保した枠に着信の顧客情報をプリセットする
-    if (pendingCallInfo.value) {
-      newReservation.value.customer_phone = formatPhoneNumber(pendingCallInfo.value.phone)
-      newReservation.value.customer_id = pendingCallInfo.value.customerId
-      newReservation.value.customer_name = pendingCallInfo.value.customerName
-      newReservation.value.record_number = pendingCallInfo.value.recordNumber
-      if (!newReservation.value.note) {
-        newReservation.value.note = '【電話受付】'
-      }
-      pendingCallInfo.value = null
-    }
-  } else if (!openForm && pendingCallInfo.value) {
-    // 着信対応の枠選択モード中にキャンセルした場合は、オーバーレイ/吹き出しを解除する
-    pendingCallInfo.value = null
   }
 }
+
 const formatTime = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
 const formatDate = (ts: Timestamp) => { const d = ts.toDate(); return `${d.getMonth() + 1}/${d.getDate()}` }
 const getStaffName = (id: string) => staffs.value.find(s => s.id === id)?.name || '未定'
