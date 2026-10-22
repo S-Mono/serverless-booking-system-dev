@@ -25,6 +25,7 @@ interface Staff {
   is_working: boolean;
   code: string; // 👈 CSV用コード
   color?: string; // 👈 スタッフの色
+  auto_calc_end_time?: boolean; // 👈 予約登録時に終了時間を自動計算するか（既定: true）
 }
 
 const staffs = ref<Staff[]>([])
@@ -37,7 +38,8 @@ const newStaff = ref({
   code: '',
   name: '', display_name: '', order_priority: 99,
   roles: { accepts_new_customer: true, accepts_free_booking: true }, is_working: true,
-  color: '#3498db'
+  color: '#3498db',
+  auto_calc_end_time: true
 })
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
@@ -62,7 +64,7 @@ const fetchData = async () => {
     const snap = await getDocs(collection(db, 'staffs'))
     staffs.value = snap.docs.map(doc => {
       const d = doc.data()
-      return { id: doc.id, ...d, is_working: d.is_working ?? true, code: d.code || '', color: d.color || '#3498db' }
+      return { id: doc.id, ...d, is_working: d.is_working ?? true, code: d.code || '', color: d.color || '#3498db', auto_calc_end_time: d.auto_calc_end_time ?? true }
     })
       .sort((a: any, b: any) => a.order_priority - b.order_priority) as Staff[]
 
@@ -304,6 +306,7 @@ onMounted(() => { fetchData() })
                   <div class="roles-grid">
                     <label><input type="checkbox" v-model="staff.is_working"> 🟢 出勤</label>
                     <label><input type="checkbox" v-model="staff.roles.accepts_new_customer"> 新規OK</label>
+                    <label><input type="checkbox" v-model="staff.auto_calc_end_time"> ⏱ 終了時間を自動計算</label>
                   </div>
                   <div class="action-row"><button @click="saveStaff(staff)" class="update-btn">保存</button></div>
                 </div>

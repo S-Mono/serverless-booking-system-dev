@@ -27,7 +27,7 @@ const NOTIFICATION_TOKEN_KEY = 'admin_notification_token'
 
 const isNotifyEnabled = ref(false) // 現在通知ONかどうか
 
-interface Staff { id: string; name: string; color?: string }
+interface Staff { id: string; name: string; color?: string; auto_calc_end_time?: boolean }
 interface Reservation {
   id: string; start_at: Timestamp; end_at: Timestamp; staff_id: string
   customer_id?: string; // 👈 追加
@@ -420,8 +420,16 @@ const removeMenu = (menuId: string) => {
   }
 }
 
+// 選択中担当者が「終了時間を自動計算」する設定かどうか（既定: true）
+const isAutoCalcEndTimeEnabled = computed(() => {
+  const staff = staffs.value.find(s => s.id === newReservation.value.staff_id)
+  return staff?.auto_calc_end_time !== false
+})
+
 // 終了時間を更新（開始時間 + メニューの累計時間）
+// 👉 担当者設定で自動計算がOFFの場合は、終了時間欄を一切書き換えない（既存の値・空欄をそのまま保持）
 const updateEndTime = () => {
+  if (!isAutoCalcEndTimeEnabled.value) return
   if (newReservation.value.start_time && totalMenuDuration.value > 0) {
     const startDate = new Date(newReservation.value.start_time)
     const endDate = new Date(startDate.getTime() + totalMenuDuration.value * 60000)
@@ -570,7 +578,7 @@ const initData = async (fetchMaster = true) => {
   try {
     if (fetchMaster) {
       const staffSnap = await getDocs(collection(db, 'staffs'))
-      staffs.value = staffSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter((s: any) => s.is_working !== false).sort((a: any, b: any) => a.order_priority - b.order_priority) as Staff[]
+      staffs.value = staffSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), auto_calc_end_time: (doc.data() as any).auto_calc_end_time ?? true })).filter((s: any) => s.is_working !== false).sort((a: any, b: any) => a.order_priority - b.order_priority) as Staff[]
       const menuSnap = await getDocs(collection(db, 'menus'))
       menus.value = menuSnap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
@@ -2618,9 +2626,13 @@ const exportReservationsToExcel = async () => {
           <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
         </div>
         <div class="form-group">
-          <label>終了日時 <span style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span></label>
+          <label>終了日時
+            <span v-if="isAutoCalcEndTimeEnabled" style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span>
+            <span v-else style="color: #e67e22; font-size: 0.85rem;">(この担当者は自動計算OFF - 手動入力してください)</span>
+          </label>
           <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
-          <p class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
+          <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
+          <p v-else class="hint">※ この担当者は「終了時間を自動計算」が無効のため、終了日時を手動で入力してください</p>
         </div>
         <div class="form-group">
           <label>メニュー <span style="color: #e74c3c;">*</span></label>
