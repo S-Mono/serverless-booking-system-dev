@@ -3975,15 +3975,34 @@ const exportReservationsToExcel = async () => {
 }
 
 .modal-section {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem 1rem;
+  background: #fafbfc;
+  border: 1px solid #e3e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.modal-section.staff-section {
+  background: #fbfdff;
+}
+
+.modal-section.menu-section {
+  background: #fdfcfa;
+}
+
+.modal-section.customer-section {
+  background: #fafcfb;
 }
 
 .modal-section .section-title {
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.7rem;
+  padding-bottom: 0.4rem;
   font-size: 0.95rem;
   font-weight: bold;
   color: #2c3e50;
   border-left: 4px solid #3498db;
+  border-bottom: 1px solid #e3e7eb;
   padding-left: 0.5rem;
 }
 
