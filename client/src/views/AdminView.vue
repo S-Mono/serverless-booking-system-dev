@@ -2646,13 +2646,9 @@ const exportReservationsToExcel = async () => {
               <span v-if="validationErrors.start_time" class="error-message">{{ validationErrors.start_time }}</span>
             </div>
             <div class="form-group">
-              <label>終了日時
-                <span v-if="isAutoCalcEndTimeEnabled" style="color: #999; font-size: 0.85rem;">(任意 - 自動計算)</span>
-                <span v-else style="color: #e67e22; font-size: 0.85rem;">(この担当者は自動計算OFF - 手動入力してください)</span>
-              </label>
+              <label>終了日時</label>
               <input type="datetime-local" v-model="newReservation.end_time" placeholder="自動計算されます">
-              <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、選択したメニューの累計時間から自動計算されます</p>
-              <p v-else class="hint">※ この担当者は「終了時間を自動計算」が無効のため、終了日時を手動で入力してください</p>
+              <p v-if="isAutoCalcEndTimeEnabled" class="hint">※ 未入力の場合、自動計算されます</p>
             </div>
           </div>
           <div class="section-row">
