@@ -1764,8 +1764,34 @@ const getReservationStyle = (res: Reservation) => {
     backgroundColor: baseColor
   }
 }
+// ミニカレンダーに表示中の年月（selectedDateの日とは独立して月送り・年送りできるようにする）
+const calendarViewDate = ref(new Date(selectedDate.value.getFullYear(), selectedDate.value.getMonth(), 1))
+
+// selectedDateが（日送りや「今日」ボタンなどで）変わったら、表示中の月もそれに追従させる
+watch(selectedDate, (nv) => {
+  if (nv.getFullYear() !== calendarViewDate.value.getFullYear() || nv.getMonth() !== calendarViewDate.value.getMonth()) {
+    calendarViewDate.value = new Date(nv.getFullYear(), nv.getMonth(), 1)
+  }
+})
+
+const calendarViewLabel = computed(() => `${calendarViewDate.value.getFullYear()}年 ${calendarViewDate.value.getMonth() + 1}月`)
+
+// helper: compare two Date objects by date only (ignore time)
+const isSameDateOnly = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+
+const changeCalendarMonth = (diff: number) => {
+  const d = new Date(calendarViewDate.value)
+  d.setMonth(d.getMonth() + diff)
+  calendarViewDate.value = d
+}
+const changeCalendarYear = (diff: number) => {
+  const d = new Date(calendarViewDate.value)
+  d.setFullYear(d.getFullYear() + diff)
+  calendarViewDate.value = d
+}
+
 const calendarDays = computed(() => {
-  const year = selectedDate.value.getFullYear(); const month = selectedDate.value.getMonth()
+  const year = calendarViewDate.value.getFullYear(); const month = calendarViewDate.value.getMonth()
   const firstDay = new Date(year, month, 1); const lastDay = new Date(year, month + 1, 0)
   const days = []
   for (let i = 0; i < firstDay.getDay(); i++) days.push({ day: '', isCurrentMonth: false })
@@ -1773,13 +1799,11 @@ const calendarDays = computed(() => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     const dateObj = new Date(year, month, d)
     const isHoliday = shopConfig.value.holiday_weekdays?.includes(dateObj.getDay()) || shopConfig.value.closed_dates?.includes(dateStr)
-    days.push({ day: d, dateStr, isCurrentMonth: true, isHoliday, isSelected: d === selectedDate.value.getDate() })
+    const isSelected = isSameDateOnly(dateObj, selectedDate.value)
+    days.push({ day: d, dateStr, isCurrentMonth: true, isHoliday, isSelected })
   }
   return days
 })
-
-// helper: compare two Date objects by date only (ignore time)
-const isSameDateOnly = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
 // group left-side list by date and put selectedDate group first
 const groupedByDate = computed(() => {
@@ -1820,7 +1844,14 @@ const groupedByDate = computed(() => {
 
   return result
 })
-const selectCalendarDate = (day: any) => { if (!day.isCurrentMonth) return; const newDate = new Date(selectedDate.value); newDate.setDate(day.day); selectedDate.value = newDate }
+const selectCalendarDate = (day: any) => {
+  if (!day.isCurrentMonth) return
+  const parts = String(day.dateStr).split('-').map(Number)
+  const y = parts[0] ?? 1970
+  const m = parts[1] ?? 1
+  const d = parts[2] ?? 1
+  selectedDate.value = new Date(y, m - 1, d)
+}
 
 // load more days into the left-list window (incrementally)
 const loadMoreDays = (days = 30) => {
@@ -2201,7 +2232,14 @@ const exportReservationsToExcel = async () => {
           <button class="date-nav-btn" @click="changeDate(-1)">◀ 前日</button>
           <div class="calendar-dropdown-wrapper">
             <div class="current-date"><span class="date-text">{{ formatDateJP(selectedDate) }}</span></div>
-            <div class="mini-calendar-popup">
+            <div class="mini-calendar-popup" @click.stop>
+              <div class="calendar-nav">
+                <button type="button" class="calendar-nav-btn" title="前年" @click="changeCalendarYear(-1)">«</button>
+                <button type="button" class="calendar-nav-btn" title="前月" @click="changeCalendarMonth(-1)">‹</button>
+                <span class="calendar-nav-label">{{ calendarViewLabel }}</span>
+                <button type="button" class="calendar-nav-btn" title="次月" @click="changeCalendarMonth(1)">›</button>
+                <button type="button" class="calendar-nav-btn" title="翌年" @click="changeCalendarYear(1)">»</button>
+              </div>
               <div class="calendar-grid">
                 <div class="day-label" v-for="d in ['日', '月', '火', '水', '木', '金', '土']" :key="d">{{ d }}</div>
                 <div v-for="(day, idx) in calendarDays" :key="idx" class="day-cell"
@@ -3082,6 +3120,37 @@ const exportReservationsToExcel = async () => {
 
 .calendar-dropdown-wrapper:hover .mini-calendar-popup {
   display: block;
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.calendar-nav-btn {
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 4px 6px;
+  color: #333;
+}
+
+.calendar-nav-btn:hover {
+  background: #e0e0e0;
+}
+
+.calendar-nav-label {
+  flex: 1;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 .calendar-grid {
