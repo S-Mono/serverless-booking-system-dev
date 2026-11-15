@@ -26,7 +26,6 @@ module.exports = {
   plugins: [
     "@typescript-eslint",
     "import",
-    "prettier",
   ],
   rules: {
     "quotes": ["error", "double"],
