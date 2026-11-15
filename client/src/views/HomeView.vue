@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { db, auth } from '../lib/firebase'
 import { collection, getDocs, addDoc, query, where, Timestamp, orderBy, getDoc, doc, limit } from 'firebase/firestore'
 import { onAuthStateChanged, type Unsubscribe } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 import { useLineAuthStore } from '@/stores/lineAuth'
 import { reportLiffError } from '../lib/errorReporter'
@@ -246,6 +247,16 @@ onMounted(async () => {
   })
 })
 
+// 指定スタッフの占有時間帯を取得（個人情報を含まない）
+const fetchBusySlots = async (staffId: string, startMs: number, endMs: number): Promise<{ start: number; end: number }[]> => {
+  const callable = httpsCallable<
+    { staffId: string; startMs: number; endMs: number },
+    { slots: { staff_id: string; start: number; end: number }[] }
+  >(getFunctions(undefined, 'asia-northeast1'), 'getBusySlots')
+  const res = await callable({ staffId, startMs, endMs })
+  return res.data.slots.map(s => ({ start: s.start, end: s.end }))
+}
+
 const fetchAvailableSlots = async () => {
   availableSlots.value = []
   if (!selectedStaffId.value || !reservationDate.value || selectedMenus.value.length === 0) return
@@ -253,9 +264,8 @@ const fetchAvailableSlots = async () => {
     const targetDate = new Date(reservationDate.value)
     const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0)
     const endOfDay = new Date(targetDate); endOfDay.setDate(endOfDay.getDate() + 1); endOfDay.setHours(0, 0, 0, 0)
-    const q = query(collection(db, 'reservations'), where('staff_id', '==', selectedStaffId.value), where('start_at', '>=', Timestamp.fromDate(startOfDay)), where('start_at', '<', Timestamp.fromDate(endOfDay)), orderBy('start_at', 'asc'))
-    const snapshot = await getDocs(q)
-    const busySlots = snapshot.docs.map(doc => doc.data()).filter(d => d.status !== 'cancelled').map(d => ({ start: d.start_at.toDate().getTime(), end: d.end_at.toDate().getTime() }))
+    // 他人の予約内容は読めないため、占有時間帯のみを Cloud Function から取得
+    const busySlots = await fetchBusySlots(selectedStaffId.value, startOfDay.getTime(), endOfDay.getTime())
 
     const businessHours = getBusinessHoursForDate(shopConfig.value, targetDate)
     if (!businessHours) return
@@ -348,10 +358,8 @@ const submitReservation = async () => {
     const limitQ = query(collection(db, 'reservations'), where('customer_id', '==', customerProfile.value?.id || uid), where('start_at', '>=', Timestamp.now()), where('status', '!=', 'cancelled'))
     const limitSnapshot = await getDocs(limitQ)
     if (limitSnapshot.size >= 3) throw new Error('予約数の上限(3件)に達しています。')
-    const q = query(collection(db, 'reservations'), where('start_at', '<', endTimestamp), where('end_at', '>', startTimestamp))
-    const snapshot = await getDocs(q)
-    let isBusy = false
-    snapshot.forEach(doc => { const data = doc.data(); if (data.status !== 'cancelled' && data.staff_id === selectedStaffId.value) isBusy = true })
+    const busy = await fetchBusySlots(selectedStaffId.value, startDate.getTime(), endDate.getTime())
+    const isBusy = busy.some(b => startDate.getTime() < b.end && endDate.getTime() > b.start)
     if (isBusy) throw new Error('申し訳ありません。指定された日時は担当者が満席です。')
 
     // LINEミニアプリ内なら、Cloud Functionsトリガー用にLIFFアクセストークンを一時的に予約ドキュメントへ保存する

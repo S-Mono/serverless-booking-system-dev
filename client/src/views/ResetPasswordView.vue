@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { auth, db } from '../lib/firebase'
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 
@@ -17,8 +15,6 @@ const loading = ref(false)
 const verifying = ref(true)
 const message = ref('')
 const validToken = ref(false)
-const customerId = ref('')
-const customerPhone = ref('')
 
 const PSEUDO_DOMAIN = '@local.booking-system'
 
@@ -31,71 +27,23 @@ onMounted(async () => {
     }
 
     try {
-        // トークンを検証（作成日時の降順で最新の1件のみ取得）
-        console.log('🔍 トークン検証開始:', token)
-        const resetQuery = query(
-            collection(db, 'password_reset_requests'),
-            where('token', '==', token),
-            where('used', '==', false),
-            orderBy('created_at', 'desc'),
-            limit(1)
-        )
-        const resetSnapshot = await getDocs(resetQuery)
-        console.log('📊 検索結果:', {
-            empty: resetSnapshot.empty,
-            size: resetSnapshot.size,
-            docs: resetSnapshot.docs.length
-        })
-
-        if (resetSnapshot.empty || !resetSnapshot.docs[0]) {
-            console.log('❌ トークンが見つからないか既に使用済み')
-            message.value = 'このリンクは無効または既に使用されています'
-            verifying.value = false
-            return
-        }
-
-        const resetData = resetSnapshot.docs[0].data()
-        console.log('📄 リセットデータ:', {
-            customer_id: resetData.customer_id,
-            expires_at: resetData.expires_at?.toDate(),
-            used: resetData.used,
-            created_at: resetData.created_at?.toDate()
-        })
-        const expiresAt = resetData.expires_at?.toDate()
-
-        if (!expiresAt) {
-            console.log('❌ 有効期限データなし')
-            message.value = 'リクエストデータが不正です'
-            verifying.value = false
-            return
-        }
-
-        const now = new Date()
-        console.log('⏰ 時刻確認:', {
-            now: now,
-            expiresAt: expiresAt,
-            expired: expiresAt < now
-        })
-
-        if (expiresAt < now) {
-            console.log('❌ 有効期限切れ')
-            message.value = 'このリンクの有効期限が切れています'
-            verifying.value = false
-            return
-        }
-
-        customerId.value = resetData.customer_id
-        customerPhone.value = resetData.phone_number
+        // トークン検証はサーバー側(Cloud Function)で実施。Firestoreを直接読まない
+        const verifyPasswordResetToken = httpsCallable(functions, 'verifyPasswordResetToken')
+        await verifyPasswordResetToken({ token })
         validToken.value = true
-        console.log('✅ トークン検証成功:', customerId.value)
     } catch (error: any) {
         console.error('トークン検証エラー:', error)
-        message.value = `エラーが発生しました: ${error.message}`
+        if (error.code === 'functions/deadline-exceeded') {
+            message.value = 'このリンクの有効期限が切れています'
+        } else if (error.code === 'functions/not-found' || error.code === 'functions/invalid-argument') {
+            message.value = 'このリンクは無効または既に使用されています'
+        } else {
+            message.value = 'エラーが発生しました。時間をおいて再度お試しください'
+        }
     } finally {
         verifying.value = false
     }
 })
-
 const submitReset = async () => {
     // バリデーション
     if (!newPassword.value || !confirmPassword.value) {

@@ -1,0 +1,15 @@
+{
+  "name": "booking-security-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Firestore / Storage ルールの脆弱性テスト (Emulator)",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-reporter=spec"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0"
+  }
+}
+
+

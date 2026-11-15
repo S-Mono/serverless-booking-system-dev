@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { db } from '../lib/firebase'
-import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useDialogStore } from '../stores/dialog'
 
+const functions = getFunctions(undefined, 'asia-northeast1')
 const router = useRouter()
 const dialog = useDialogStore()
 
@@ -46,56 +46,18 @@ const submitRequest = async () => {
     message.value = ''
 
     try {
-        // 顧客情報を検索
-        const phoneDigits = phoneNumber.value.replace(/\D/g, '')
-        const nameWithoutSpace = nameKana.value.replace(/\s/g, '')
-
-        const customersQuery = query(
-            collection(db, 'customers'),
-            where('phone_number', 'in', [phoneNumber.value, phoneDigits])
-        )
-        const customersSnapshot = await getDocs(customersQuery)
-
-        let matchedCustomer: any = null
-        for (const doc of customersSnapshot.docs) {
-            const data = doc.data()
-            const customerNameKana = (data.name_kana || '').replace(/\s/g, '')
-            if (customerNameKana === nameWithoutSpace) {
-                matchedCustomer = { id: doc.id, ...data }
-                break
-            }
-        }
-
-        if (!matchedCustomer) {
-            message.value = '入力された情報と一致する顧客が見つかりませんでした'
-            loading.value = false
-            return
-        }
-
-        // LINEログインユーザーはパスワードリセット不可
-        if (matchedCustomer.provider === 'line') {
-            message.value = 'LINEでログインしている場合はパスワードリセットできません'
-            loading.value = false
-            return
-        }
-
-        // パスワードリセットリクエストを作成
-        const token = Math.random().toString(36).substring(2) + Date.now().toString(36)
-        await addDoc(collection(db, 'password_reset_requests'), {
-            customer_id: matchedCustomer.id,
-            phone_number: matchedCustomer.phone_number,
-            name_kana: matchedCustomer.name_kana,
-            email: email.value,
-            token: token,
-            used: false,
-            created_at: Timestamp.now(),
-            expires_at: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)) // 10分有効
+        // サーバー側(Cloud Function)で顧客照合とリクエスト作成を行う
+        // (顧客情報・トークンをクライアントに返さない)
+        const requestPasswordReset = httpsCallable(functions, 'requestPasswordReset')
+        await requestPasswordReset({
+            phoneNumber: phoneNumber.value,
+            nameKana: nameKana.value,
+            email: email.value
         })
 
-        console.log('✅ パスワードリセットリクエスト作成:', token)
-
+        // 一致の有無に関わらず同じ文言を表示（顧客の存在を推測させない）
         await dialog.alert(
-            'パスワードリセット用のURLを記載したメールを送信しました。\nメールをご確認ください。',
+            '入力内容に一致するアカウントがある場合、パスワードリセット用のURLを記載したメールを送信しました。\nメールをご確認ください。',
             'リクエスト完了'
         )
 

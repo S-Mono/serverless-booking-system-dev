@@ -147,3 +147,11 @@ booking-system-dev-81786-firebase-adminsdk-fbsvc-8126f47cb0.json
 client/users.json
 .vercel
 .env*.local
+
+# Local virtual environments / tooling (security tests)
+.venv/
+.jdk/
+tests/**/node_modules/
+firestore-debug.log
+ui-debug.log
+tests/security/result.txt

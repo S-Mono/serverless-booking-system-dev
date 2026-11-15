@@ -17,20 +17,50 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // 📞 ログイン中ユーザー自身の電話番号に一致する顧客ドキュメントか
+    // (電話番号ログインは「電話番号@local.booking-system」のメールで認証される)
+    // クエリ where('phone_number','==',自分の番号) のみ許可される
+    function isOwnPhoneRecord() {
+      return request.auth != null
+        && 'email' in request.auth.token
+        && request.auth.token.email.matches('.*@local[.]booking-system')
+        && resource.data.phone_number == request.auth.token.email.split('@')[0];
+    }
+
+    // 🙋 customer_id が自分の顧客IDか
+    // (UID一致、または管理者が事前登録した顧客ドキュメントの電話番号が自分と一致)
+    function ownsCustomer(customerId) {
+      return isOwner(customerId)
+        || (request.auth != null
+            && 'email' in request.auth.token
+            && request.auth.token.email.matches('.*@local[.]booking-system')
+            && get(/databases/$(database)/documents/customers/$(customerId)).data.phone_number
+               == request.auth.token.email.split('@')[0]);
+    }
+
+    // 🚫 一般ユーザーが書き込んではいけない特権フィールド
+    function hasPrivilegedFields(data) {
+      return data.keys().hasAny(['role', 'admin', 'is_admin', 'isAdmin']);
+    }
+
     // 📅 予約データ (reservations)
+    // 空き枠の確認は Cloud Function(getBusySlots) 経由。他人の予約は読めない。
     match /reservations/{reservationId} {
       allow read, write: if isAdmin();
-      allow read: if isAuthenticated();
-      allow create: if isOwner(request.resource.data.customer_id);
-      allow update, delete: if isOwner(resource.data.customer_id);
+      allow read: if ownsCustomer(resource.data.customer_id);
+      // 新規作成は本人名義の「仮予約(pending)」のみ
+      allow create: if ownsCustomer(request.resource.data.customer_id)
+        && request.resource.data.status == 'pending';
+      // 顧客によるキャンセル(削除)は本人のみ。更新(ステータス/金額変更)は不可
+      allow delete: if ownsCustomer(resource.data.customer_id);
     }
 
     // 📩 メッセージデータ (messages)
     match /messages/{messageId} {
       allow read, write: if isAdmin();
-      allow read: if isOwner(resource.data.customer_id);
-      allow create: if isOwner(request.resource.data.customer_id);
-      allow update, delete: if isOwner(resource.data.customer_id);
+      allow read: if ownsCustomer(resource.data.customer_id);
+      allow create: if ownsCustomer(request.resource.data.customer_id);
+      allow update, delete: if ownsCustomer(resource.data.customer_id);
     }
 
     // 📧 お問い合わせデータ (contacts)
@@ -42,9 +72,14 @@ service cloud.firestore {
     // 👥 顧客データ (customers)
     match /customers/{userId} {
       allow read, write: if isAdmin();
-      allow read, write: if isOwner(userId);
-      allow get, list: if true;  // 電話番号ログイン用の検索を許可
-      allow create: if isAuthenticated() && isOwner(userId);  // 新規ユーザー登録時の作成を許可
+      // 本人 または 自分の電話番号に一致する顧客のみ参照可（名寄せ用）
+      allow get: if isOwner(userId) || isOwnPhoneRecord();
+      allow list: if isOwnPhoneRecord();
+      // 新規登録・更新は本人のみ。role 等の特権フィールドは書き込み不可
+      allow create: if isOwner(userId) && !hasPrivilegedFields(request.resource.data);
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['role', 'admin', 'is_admin', 'isAdmin']);
     }
 
     // 📋 マスタデータ
@@ -82,17 +117,24 @@ service cloud.firestore {
     }
 
     // 🔑 パスワードリセットリクエスト
+    // クライアントからは一切アクセス不可（Cloud Functions の Admin SDK のみ）
     match /password_reset_requests/{requestId} {
-      // パスワードリセット機能のため、読み取りも許可
-      allow read: if true;
-      allow create: if true; // 誰でも作成可能（パスワード忘れ機能用）
-      allow update: if true; // トークン使用済みフラグの更新用
+      allow read, write: if false;
     }
 
     // 🐛 エラーログ (error_logs) - 審査時のエラー収集用
+    // 認証済みユーザーのみ、許可フィールド・サイズ制限付きで作成可能
     match /error_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if true;  // 誰でも書き込み可能（エラー発生時に記録するため）
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'message', 'name', 'stack', 'context', 'userAgent', 'url',
+          'timestamp', 'stage', 'liffId', 'isInClient', 'isLoggedIn'
+        ])
+        && (!('message' in request.resource.data) || request.resource.data.message == null
+            || request.resource.data.message.size() <= 2000)
+        && (!('stack' in request.resource.data) || request.resource.data.stack == null
+            || request.resource.data.stack.size() <= 5000);
     }
     // 🔍 【一時】LINE User ID ログ（確認後削除）
     match /tmp_line_uid_log/{docId} {

@@ -9,6 +9,7 @@ import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
 import axios from "axios";
+import * as crypto from "crypto";
 
 admin.initializeApp();
 
@@ -1119,13 +1120,10 @@ export const adminUpdatePassword = onCall(
     }
 
     const callerUid = request.auth.uid;
-    const callerDoc = await admin
-      .firestore()
-      .collection("customers")
-      .doc(callerUid)
-      .get();
 
-    if (!callerDoc.exists || callerDoc.data()?.role !== "admin") {
+    // 管理者判定はカスタムクレーム(token.admin)のみを信頼する
+    // (customers.role はユーザーが書き換え可能なため使用しない)
+    if (request.auth.token.admin !== true) {
       throw new HttpsError(
         "permission-denied",
         "Admin permission required"
@@ -1151,6 +1149,158 @@ export const adminUpdatePassword = onCall(
       });
       throw new HttpsError("internal", "Failed to update password");
     }
+  }
+);
+
+/**
+ * パスワードリセットを申請（未認証で呼び出し可）
+ * 電話番号 + 氏名(カナ) が一致する顧客にのみリクエストを作成する。
+ * 一致有無に関わらず同じ応答を返し、顧客の存在を推測させない。
+ */
+export const requestPasswordReset = onCall(
+  {
+    region: "asia-northeast1",
+    invoker: "public",
+  },
+  async (request) => {
+    const {phoneNumber, nameKana, email} = request.data || {};
+
+    if (
+      typeof phoneNumber !== "string" ||
+      typeof nameKana !== "string" ||
+      typeof email !== "string" ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      email.length > 254 ||
+      phoneNumber.length > 20 ||
+      nameKana.length > 100
+    ) {
+      throw new HttpsError("invalid-argument", "Invalid input");
+    }
+
+    const phoneDigits = phoneNumber.replace(/\D/g, "");
+    const nameWithoutSpace = nameKana.replace(/\s/g, "");
+    const db = admin.firestore();
+
+    const snap = await db
+      .collection("customers")
+      .where("phone_number", "in", [phoneNumber, phoneDigits])
+      .get();
+
+    const matched = snap.docs.find((d) => {
+      const kana = String(d.data().name_kana || "").replace(/\s/g, "");
+      return kana === nameWithoutSpace;
+    });
+
+    if (matched && matched.data().provider !== "line") {
+      const data = matched.data();
+      // 推測困難なトークン (暗号論的乱数)
+      const token = crypto.randomBytes(32).toString("hex");
+      await db.collection("password_reset_requests").add({
+        customer_id: matched.id,
+        phone_number: data.phone_number,
+        name_kana: data.name_kana,
+        email,
+        token,
+        used: false,
+        created_at: admin.firestore.Timestamp.now(),
+        expires_at: admin.firestore.Timestamp.fromDate(
+          new Date(Date.now() + 10 * 60 * 1000)
+        ),
+      });
+    }
+
+    // 一致の有無に関わらず同じ応答
+    return {success: true};
+  }
+);
+
+/**
+ * リセットトークンの有効性確認（未認証で呼び出し可）
+ */
+export const verifyPasswordResetToken = onCall(
+  {
+    region: "asia-northeast1",
+    invoker: "public",
+  },
+  async (request) => {
+    const {token} = request.data || {};
+    if (typeof token !== "string" || token.length < 16) {
+      throw new HttpsError("invalid-argument", "token is required");
+    }
+
+    const q = await admin
+      .firestore()
+      .collection("password_reset_requests")
+      .where("token", "==", token)
+      .where("used", "==", false)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .get();
+
+    if (q.empty) {
+      throw new HttpsError("not-found", "Invalid or already used token");
+    }
+    const expiresAt = q.docs[0].data().expires_at?.toDate();
+    if (!expiresAt || expiresAt < new Date()) {
+      throw new HttpsError("deadline-exceeded", "Token has expired");
+    }
+    return {valid: true};
+  }
+);
+
+/**
+ * 予約の空き状況（占有時間帯のみ）を返す
+ * 他人の予約内容(氏名・金額等)をクライアントへ渡さない。
+ */
+export const getBusySlots = onCall(
+  {
+    region: "asia-northeast1",
+    invoker: "public",
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication required");
+    }
+    const {staffId, startMs, endMs} = request.data || {};
+    if (
+      typeof startMs !== "number" ||
+      typeof endMs !== "number" ||
+      endMs <= startMs ||
+      endMs - startMs > 31 * 24 * 60 * 60 * 1000
+    ) {
+      throw new HttpsError("invalid-argument", "Invalid range");
+    }
+
+    const snap = await admin
+      .firestore()
+      .collection("reservations")
+      .where("start_at", ">=", admin.firestore.Timestamp.fromMillis(startMs))
+      .where("start_at", "<", admin.firestore.Timestamp.fromMillis(endMs))
+      .get();
+
+    // 予約開始が範囲より前で範囲に食い込むものも拾うため前日分も確認
+    const prevSnap = await admin
+      .firestore()
+      .collection("reservations")
+      .where(
+        "start_at", ">=",
+        admin.firestore.Timestamp.fromMillis(startMs - 24 * 60 * 60 * 1000)
+      )
+      .where("start_at", "<", admin.firestore.Timestamp.fromMillis(startMs))
+      .get();
+
+    const slots = [...prevSnap.docs, ...snap.docs]
+      .map((d) => d.data())
+      .filter((d) => d.status !== "cancelled")
+      .filter((d) => !staffId || d.staff_id === staffId)
+      .map((d) => ({
+        staff_id: d.staff_id as string,
+        start: (d.start_at as admin.firestore.Timestamp).toMillis(),
+        end: (d.end_at as admin.firestore.Timestamp).toMillis(),
+      }))
+      .filter((s) => s.end > startMs);
+
+    return {slots};
   }
 );
 
@@ -1221,7 +1371,6 @@ export const resetPasswordWithToken = onCall(
 
       logger.info("Password reset successful", {
         customerId,
-        token,
       });
 
       return {success: true};
@@ -1233,7 +1382,6 @@ export const resetPasswordWithToken = onCall(
       const errorObj = error as { message?: string };
       logger.error("Password reset failed", {
         error: errorObj.message,
-        token,
       });
       throw new HttpsError("internal", "Failed to reset password");
     }
