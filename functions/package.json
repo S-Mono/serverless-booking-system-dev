@@ -33,5 +33,11 @@
     "firebase-tools": "^14.25.0",
     "typescript": "^5.7.3"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "@firebase/util@1.15.1": true,
+    "protobufjs@7.6.6": true,
+    "@parcel/watcher": false,
+    "re2": false
+  }
 }
