@@ -155,3 +155,8 @@ tests/**/node_modules/
 firestore-debug.log
 ui-debug.log
 tests/security/result.txt
+
+# LINE assertion signing keys (never commit)
+private-key.json
+public-key.json
+*.pem
