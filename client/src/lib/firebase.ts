@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app'
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from 'firebase/app-check'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
@@ -15,6 +16,32 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig)
+
+// 🛡️ App Check（モニタリング段階）
+// VITE_RECAPTCHA_SITE_KEY が未設定の環境では何もしない（従来どおりの動作）。
+// 設定すると、Firestore / Functions などへのリクエストに App Check トークンが付与される。
+// ※ サーバー側で「強制(Enforce)」するまでは、トークンが無くてもリクエストは拒否されない。
+// ※ トークン取得の成否は、コンソール（[AppCheck]）と Firebase コンソールのメトリクスで確認する。
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined
+if (typeof window !== 'undefined' && recaptchaSiteKey) {
+  try {
+    // 開発時(localhost)はデバッグトークンを使う
+    if (import.meta.env.DEV) {
+      (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN = true
+    }
+    const appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey),
+      isTokenAutoRefreshEnabled: true
+    })
+    // 診断用: トークンが取得できるか（LINE内ブラウザでの動作確認用）
+    getToken(appCheck, false)
+      .then(() => console.log('[AppCheck] token acquired'))
+      .catch((e: unknown) => console.warn('[AppCheck] token failed:', e))
+  } catch (e) {
+    // App Check の失敗でアプリ全体を止めない
+    console.warn('[AppCheck] initialization failed:', e)
+  }
+}
 
 export const auth = getAuth(app)
 export const db = getFirestore(app)

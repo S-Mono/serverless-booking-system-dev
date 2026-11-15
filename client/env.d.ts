@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_LIFF_ID: string
+  readonly VITE_RECAPTCHA_SITE_KEY?: string
   // 他に使う環境変数があればここに追加
 }
 
